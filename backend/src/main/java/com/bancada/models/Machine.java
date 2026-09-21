@@ -155,6 +155,16 @@ public class Machine {
         this.image = image;
     }
 
+    /** Folder of the device shown inside the machine; takes effect when the container is recreated. */
+    public void addVolume(MachineVolume volume) {
+        this.volumes.removeIf(existing -> existing.getContainerPath().equals(volume.getContainerPath()));
+        this.volumes.add(volume);
+    }
+
+    public void removeVolume(String hostPath) {
+        this.volumes.removeIf(existing -> existing.getHostPath().equals(hostPath));
+    }
+
     public void changeStatus(MachineStatus target) {
         MachineStatus.validateTransition(this.status, target);
         this.status = target;

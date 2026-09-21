@@ -18,6 +18,7 @@ export const Rotas = {
   },
   terminal: "/terminal",
   machines: "/maquinas",
+  volumes: "/discos",
   remoteAccess: "/acesso-remoto",
   business: {
     customers: "/negocio/clientes",

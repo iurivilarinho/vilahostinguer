@@ -28,6 +28,7 @@ import { PageRemoteAccess } from "@/features/remote-access";
 import { PageDesignSystem } from "@/features/public/design-system";
 import { PageSettings } from "@/features/settings";
 import { PageTerminal } from "@/features/terminal";
+import { PageVolumes } from "@/features/volumes";
 
 export const AppRouter = () => (
   <Routes>
@@ -48,6 +49,7 @@ export const AppRouter = () => (
       </Route>
       <Route path={Rotas.terminal} element={<PageTerminal />} />
       <Route path={Rotas.machines} element={<PageMachines />} />
+      <Route path={Rotas.volumes} element={<PageVolumes />} />
       <Route path={Rotas.remoteAccess} element={<PageRemoteAccess />} />
       <Route path={Rotas.business.customers} element={<PageCustomers />} />
       <Route path={Rotas.business.plans} element={<PagePlans />} />

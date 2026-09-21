@@ -42,7 +42,13 @@ public enum OperationType {
     MACHINE_RESTORE("Restauração de máquina"),
 
     @Schema(description = "Reinstala a máquina do zero, na mesma ou em outra distribuição e versão")
-    MACHINE_REINSTALL("Reinstalação de máquina");
+    MACHINE_REINSTALL("Reinstalação de máquina"),
+
+    @Schema(description = "Conexão de um disco do PC ao dispositivo ou a uma máquina")
+    VOLUME_ATTACH("Conexão de disco do PC"),
+
+    @Schema(description = "Desconexão de um disco do PC")
+    VOLUME_DETACH("Desconexão de disco do PC");
 
     private final String description;
 

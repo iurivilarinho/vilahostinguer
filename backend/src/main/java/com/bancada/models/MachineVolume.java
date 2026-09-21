@@ -20,6 +20,11 @@ public class MachineVolume {
     public MachineVolume() {
     }
 
+    public MachineVolume(String hostPath, String containerPath) {
+        this.hostPath = hostPath;
+        this.containerPath = containerPath;
+    }
+
     public MachineVolume(MachineVolumeRequest request) {
         this.hostPath = request.hostPath().trim();
         this.containerPath = request.containerPath().trim();

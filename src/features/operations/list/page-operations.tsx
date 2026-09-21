@@ -24,6 +24,8 @@ const TYPE_OPTIONS: { value: OperationType; label: string }[] = [
   { value: "MACHINE_BACKUP", label: "Backups de máquinas" },
   { value: "MACHINE_RESTORE", label: "Restauração de máquinas" },
   { value: "MACHINE_REINSTALL", label: "Reinstalação de máquinas" },
+  { value: "VOLUME_ATTACH", label: "Conexão de discos do PC" },
+  { value: "VOLUME_DETACH", label: "Desconexão de discos do PC" },
 ];
 
 export const PageOperations = () => {

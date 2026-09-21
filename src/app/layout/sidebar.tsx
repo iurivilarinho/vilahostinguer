@@ -1,4 +1,4 @@
-import { Activity, Archive, Boxes, CreditCard, Globe, History, KeyRound, LayoutDashboard, Package, Palette, Receipt, Server, Settings, SquareTerminal, Store, Users } from "lucide-react";
+import { Activity, Archive, Boxes, CreditCard, Database, Globe, History, KeyRound, LayoutDashboard, Package, Palette, Receipt, Server, Settings, SquareTerminal, Store, Users } from "lucide-react";
 import type { ReactNode } from "react";
 import { NavLink } from "react-router-dom";
 import { Typography } from "@/components";
@@ -17,6 +17,7 @@ const MAIN_ITEMS: NavItem[] = [
   { to: Rotas.dashboard, label: "Início", icon: <LayoutDashboard />, end: true },
   { to: Rotas.devices.list, label: "Dispositivos", icon: <Server /> },
   { to: Rotas.machines, label: "Máquinas", icon: <Boxes /> },
+  { to: Rotas.volumes, label: "Discos do PC", icon: <Database /> },
   { to: Rotas.remoteAccess, label: "Acesso remoto", icon: <Globe /> },
   { to: Rotas.terminal, label: "Terminal", icon: <SquareTerminal /> },
   { to: Rotas.backups, label: "Backups", icon: <Archive /> },

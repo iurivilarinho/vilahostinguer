@@ -139,7 +139,8 @@ public class StorageService {
         return null;
     }
 
-    private static boolean oldKernel(String kernelVersion) {
+    /** Kernels before 4.0 cannot mount ext4 made with the features current e2fsprogs turns on. */
+    public static boolean oldKernel(String kernelVersion) {
         if (kernelVersion == null) {
             return false;
         }

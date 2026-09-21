@@ -309,17 +309,47 @@ public class MachineService {
      * configuration; only the container is recreated from it, with the same resources and ports.
      */
     public String restoreScript(Machine machine, String importedImage) {
+        return recreateScript(machine, importedImage, "Recriando a máquina a partir do backup", "Máquina restaurada");
+    }
+
+    /**
+     * Docker cannot add a folder to an existing container. The system of the machine is saved with
+     * {@code docker commit} and the container is recreated from it with the folders it has now; a
+     * folder in {@code handOver} that is still empty is given to the machine user.
+     */
+    public String rebuildScript(Machine machine, String snapshotImage, String handOver) {
         String name = SshService.quote(machine.getContainerName());
-        String image = SshService.quote(importedImage);
+        StringBuilder script = new StringBuilder()
+            .append("echo '== Guardando o sistema da máquina (docker commit) =='\n")
+            .append("docker commit ").append(name).append(' ').append(SshService.quote(snapshotImage)).append(" >/dev/null || exit $?\n")
+            .append(recreateScript(machine, snapshotImage, "Recriando a máquina com as pastas novas", "Máquina pronta"));
+        if (handOver != null) {
+            String path = SshService.quote(handOver);
+            script.append("docker exec ").append(name)
+                .append(inside("[ -z \"$(ls -A " + path + " | grep -v '^lost+found$')\" ] && chown " + machine.getUsername() + ": "
+                    + path + "; true"))
+                .append('\n');
+        }
+        return script.toString();
+    }
+
+    /** Local image name for the saved system of a machine being rebuilt. */
+    public String snapshotImage(Machine machine) {
+        return RESTORE_REPOSITORY + machine.getContainerName() + ":s" + System.currentTimeMillis();
+    }
+
+    private String recreateScript(Machine machine, String image, String title, String done) {
+        String name = SshService.quote(machine.getContainerName());
+        String quotedImage = SshService.quote(image);
         return preamble(machine)
             + "docker rm -f " + name + " >/dev/null 2>&1\n"
-            + "echo '== Recriando a máquina a partir do backup =='\n"
-            + runCommand(machine, image) + " || exit $?\n"
+            + "echo '== " + title + " =='\n"
+            + runCommand(machine, quotedImage) + " || exit $?\n"
             + "for old in $(docker images " + SshService.quote(RESTORE_REPOSITORY + machine.getContainerName())
             + " --format '{{.Repository}}:{{.Tag}}'); do\n"
-            + "  [ \"$old\" = " + image + " ] || docker rmi \"$old\" >/dev/null 2>&1\n"
+            + "  [ \"$old\" = " + quotedImage + " ] || docker rmi \"$old\" >/dev/null 2>&1\n"
             + "done\n"
-            + "echo '== Máquina restaurada =='\n";
+            + "echo '== " + done + " =='\n";
     }
 
     /** Local image name for a machine backup imported on the device. */
@@ -464,6 +494,20 @@ public class MachineService {
     @Transactional
     public Machine useImage(Long id, String image) {
         Machine machine = findById(id);
+        machine.useImage(image);
+        return machineRepository.save(machine);
+    }
+
+    /** New folder list and the saved system to recreate from (see {@link #rebuildScript}). */
+    @Transactional
+    public Machine changeVolumes(Long id, MachineVolume added, String removedHostPath, String image) {
+        Machine machine = findById(id);
+        if (removedHostPath != null) {
+            machine.removeVolume(removedHostPath);
+        }
+        if (added != null) {
+            machine.addVolume(added);
+        }
         machine.useImage(image);
         return machineRepository.save(machine);
     }

@@ -56,5 +56,9 @@ bancada:
   portal:
     # Local port of the customer panel, published on the internet by the gateway.
     port: ${BANCADA_PORTAL_PORT:8748}
+  nbd:
+    # Where the devices fetch the disks kept on this PC (standard NBD port). Only the device a
+    # disk was given to is served.
+    port: ${BANCADA_NBD_PORT:10809}
 
 parent-pid: 0

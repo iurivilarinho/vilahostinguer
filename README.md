@@ -18,6 +18,7 @@ arquivos, backups e armazenamento sem abrir outro programa.
 | **Backups** | `tar.gz` das pastas escolhidas, gerado no aparelho e gravado direto neste computador (nada fica no aparelho), com SHA-256. Baixar, restaurar com um clique, descartar (o registro fica). |
 | **Armazenamento** | Discos e partições com uso. Formatação (ext4/FAT32) só de partições de dados; as de sistema do aparelho (boot, modem, efs, persist…) e as montadas ficam protegidas, e a confirmação exige digitar o nome. Em kernel antigo (3.x), o ext4 sai sem `metadata_csum_seed`/`orphan_file` para ele conseguir montar. |
 | **Máquinas** | Máquinas Linux (Ubuntu, Debian, Alpine, Fedora, Rocky, Arch — só as que têm imagem para o processador) em contêineres Docker de sistema: versão, limite de CPU e memória, rede do dispositivo ou isolada com portas, pastas compartilhadas, usuário com sudo e SSH próprio. Ligar, desligar, reiniciar, terminal direto na máquina, saída, uso ao vivo. **Backup da máquina inteira** (`docker export` compactado, gravado neste PC), **restaurar** a partir dele, **reinstalar do zero** e **trocar a distribuição ou a versão** (com backup automático antes, se quiser). As pastas compartilhadas nunca são apagadas. |
+| **Discos do PC** | Usa o espaço dos SSDs e HDs deste computador nos dispositivos e nas máquinas. Cada disco é um arquivo esparso num disco NTFS do PC, com o tamanho todo reservado (o painel nunca promete mais do que há livre); o dispositivo o recebe pela rede (NBD), formata em ext4 na primeira vez e monta numa pasta — dele ou de uma máquina. Ver [Discos do PC](#discos-do-pc). |
 | **Negócio** | Planos com preço por ciclo (mensal, trimestral, semestral, anual com desconto), clientes, contratos, faturas, configuração do painel do cliente e trilha de auditoria de tudo o que muda. |
 | **Painel do cliente** | Site separado, no estilo do hPanel, em que o cliente se cadastra, escolhe um plano, paga por Pix e gerencia o próprio servidor: ligar/desligar, uso ao vivo, terminal no navegador, trocar sistema, backups, senha do SSH, faturas. Ver [Painel do cliente](#painel-do-cliente). |
 | **Acesso remoto** | **Domínios com DDNS** (DuckDNS, Cloudflare com curinga, qualquer URL de atualização, ou manual só conferindo) atualizados quando o IP público muda. **Rotas**: sites por nome numa porta HTTP compartilhada (pelo cabeçalho Host), sites HTTPS repassados pelo nome da conexão (SNI, o certificado fica na máquina) e portas TCP (SSH, bancos, jogos) — o PC recebe e repassa ao dispositivo ou máquina, porque aparelhos no cabo USB não são alcançáveis de fora. Abre as portas no roteador por UPnP (opcional), detecta CGNAT e mostra o tráfego de cada rota. |
@@ -33,6 +34,7 @@ Bancada.exe (Tauri, janela nativa + bandeja + início automático)
      ├─ SQLite em ~/.bancada/bancada.db
      ├─ SSH (JSch) para os dispositivos
      ├─ painel do cliente em 127.0.0.1:8748 (/api/portal, /ws/portal, portal.html)
+     ├─ servidor NBD em 0.0.0.0:10809: os discos do PC, só para o dispositivo de cada um
      └─ gateway de acesso remoto: portas abertas em 0.0.0.0 só para as rotas ativas
         e para o painel do cliente (HTTP e, com certificado, HTTPS)
 ```
@@ -55,13 +57,14 @@ backend/                      Spring Boot (Java 17)
   src/main/java/com/bancada/  models, repository, request, records, response, filter,
                               specification, service, controller, enums, config, exception
   src/main/java/com/bancada/gateway/  repasse de conexões (HTTP por Host, HTTPS por SNI, TCP)
+  src/main/java/com/bancada/nbd/      servidor NBD e arquivo dos discos do PC
   src/main/resources/scripts/ scripts POSIX executados nos aparelhos (facts, metrics, partitions,
-                              files, docker-setup)
+                              files, docker-setup, volume-attach, volume-detach)
 src/                          React 19 + Vite + Tailwind 4
   app/                        providers, rotas, layout, eventos em tempo real
   components/                 componentes reutilizáveis (cada um com .stories.tsx)
   features/                   devices, credentials, terminal, apps, files, backups, storage,
-                              machines, remote-access, operations, settings, dashboard,
+                              machines, volumes, remote-access, operations, settings, dashboard,
                               public/design-system, business (planos, clientes, vendas,
                               auditoria), portal (as telas do painel do cliente)
   app/portal/                 casca, rotas e layout do painel do cliente (entrada portal.html)
@@ -90,7 +93,7 @@ npm run tauri dev
 - Testes: `npm test` (frontend) e `mvn test` (backend)
 
 Variáveis de ambiente do backend: `BANCADA_PORT` (8747), `BANCADA_DATA` (`~/.bancada`),
-`BANCADA_DB`, `BANCADA_TOKEN`, `BANCADA_PORTAL_PORT` (8748). No `npm run dev`, o painel do cliente
+`BANCADA_DB`, `BANCADA_TOKEN`, `BANCADA_PORTAL_PORT` (8748), `BANCADA_NBD_PORT` (10809). No `npm run dev`, o painel do cliente
 fica em `http://localhost:5173/portal.html`.
 
 ## Empacotar
@@ -146,6 +149,37 @@ Outros detalhes que só aparecem nesse kernel:
    UPnP), e permita o Bancada no Firewall do Windows.
 4. Com CGNAT (a visão geral avisa), nenhum redirecionamento funciona: é preciso IP público da
    operadora ou um túnel.
+
+## Discos do PC
+
+```
+PC (Windows)                                 Dispositivo (Linux)
+E:\BancadaDiscos\dados.img  ── NBD :10809 ──> /dev/nbd0 (ext4) ──> /mnt/dados
+  (arquivo esparso + .map)                                   └──> máquina: /dados
+```
+
+- **Criar**: nome, disco do PC e tamanho. O arquivo nasce esparso (ocupa espaço à medida que o
+  dispositivo grava) e o `.map` ao lado registra os blocos de 1 MB já gravados. O que falta gravar
+  fica **reservado**: um disco novo só é aceito se couber em *livre − reservado − 2 GB de folga*.
+  Só discos NTFS/ReFS servem (FAT32 não passa de 4 GB, exFAT não tem arquivo esparso).
+- **Conectar a um dispositivo**: o painel instala o `nbd-client` se faltar, conecta
+  (`nbd-client -N <nome secreto> -persist -L`), formata em ext4 **só na primeira vez** (nunca um
+  disco que já teve sistema de arquivos), roda `e2fsck -p` nas outras e monta. A pasta de montagem
+  fica travada (`chattr +i`) enquanto o disco não está nela, para nada ser gravado no aparelho por
+  engano.
+- **Conectar a uma máquina**: o disco é montado em `/srv/bancada/discos/<nome>` no dispositivo e
+  aparece na pasta escolhida dentro da máquina. O Docker não acrescenta pastas a um contêiner
+  existente, então o sistema da máquina é guardado (`docker commit`) e ela é recriada com o disco —
+  nada se perde, mas ela reinicia.
+- **Reinícios**: dispositivo reiniciou → a cada minuto o painel vê que ele voltou e conecta, monta e
+  reinicia a máquina que usa o disco. PC reiniciou → a pasta dá erro de E/S enquanto o painel está
+  fora; quando ele sobe, desfaz a montagem morta, confere o disco e monta de novo.
+- **Segurança**: o NBD não tem senha. Cada disco tem um nome secreto (128 bits) e só é entregue ao
+  endereço do dispositivo que o recebeu; listar os discos é recusado. O tráfego não é cifrado — pelo
+  cabo USB tudo bem; na rede local, qualquer um que capture os pacotes vê os dados.
+- **Requisitos**: kernel com `CONFIG_BLK_DEV_NBD` (Raspberry Pi OS, Debian, Ubuntu e Armbian já
+  têm; o J4+ precisou recompilar) e o Firewall do Windows liberando o Bancada na porta 10809.
+- Ainda não dá para **aumentar** um disco: crie outro maior e copie.
 
 ## Painel do cliente
 
@@ -214,7 +248,7 @@ descarta backups (limite por plano); troca a senha do SSH; edita os dados e a se
   `ddl-auto: update` nunca o atualiza, então um valor novo seria recusado em bancos antigos. O
   `EnumCheckCleaner` reconstrói as tabelas sem esses `CHECK` antes do Hibernate subir.
 - **Gateway** fica em `gateway/` (infraestrutura de sockets), fora de `service/`, que só tem
-  classes `@Service`.
+  classes `@Service`. Pelo mesmo motivo o servidor NBD e o arquivo de disco ficam em `nbd/`.
 - **Painel do cliente no mesmo projeto**: é uma segunda página do Vite (`portal.html`, entrada
   `src/portal-main.tsx`) com casca e rotas próprias em `app/portal/` e telas em
   `features/portal/`. Os componentes, o design system e o cliente HTTP são os mesmos; o bundle do
