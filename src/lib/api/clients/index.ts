@@ -20,3 +20,14 @@ api.interceptors.request.use((config) => {
   }
   return config;
 });
+
+/**
+ * Cliente do painel do cliente. A sessão vai no cookie httpOnly `token`, que o navegador manda
+ * sozinho; nenhum token passa pelo JavaScript.
+ */
+export const portalApi = axios.create({
+  baseURL: "/api/portal",
+  timeout: REQUEST_TIMEOUT_MS,
+  withCredentials: true,
+  paramsSerializer: { indexes: null },
+});

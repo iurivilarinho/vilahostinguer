@@ -17,6 +17,11 @@ import {
   SectionStorage,
   SectionTerminal,
 } from "@/features/devices";
+import { PageAudit } from "@/features/business/audit";
+import { PageCustomers } from "@/features/business/customers";
+import { PagePlans } from "@/features/business/plans";
+import { PagePortalSettings } from "@/features/business/portal-settings";
+import { PageInvoices, PageSubscriptions } from "@/features/business/sales";
 import { PageMachines } from "@/features/machines";
 import { PageOperations } from "@/features/operations";
 import { PageRemoteAccess } from "@/features/remote-access";
@@ -44,6 +49,12 @@ export const AppRouter = () => (
       <Route path={Rotas.terminal} element={<PageTerminal />} />
       <Route path={Rotas.machines} element={<PageMachines />} />
       <Route path={Rotas.remoteAccess} element={<PageRemoteAccess />} />
+      <Route path={Rotas.business.customers} element={<PageCustomers />} />
+      <Route path={Rotas.business.plans} element={<PagePlans />} />
+      <Route path={Rotas.business.subscriptions} element={<PageSubscriptions />} />
+      <Route path={Rotas.business.invoices} element={<PageInvoices />} />
+      <Route path={Rotas.business.portal} element={<PagePortalSettings />} />
+      <Route path={Rotas.business.audit} element={<PageAudit />} />
       <Route path={Rotas.backups} element={<PageBackups />} />
       <Route path={Rotas.operations} element={<PageOperations />} />
       <Route path={Rotas.credentials} element={<PageCredentials />} />

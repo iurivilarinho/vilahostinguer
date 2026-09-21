@@ -1,5 +1,6 @@
 package com.bancada.filter;
 
+import com.bancada.enums.BackupKind;
 import com.bancada.enums.BackupStatus;
 import io.swagger.v3.oas.annotations.media.Schema;
 import java.util.List;
@@ -9,6 +10,12 @@ public class BackupFilter {
 
     @Schema(description = "Dispositivo", example = "1")
     private Long deviceId;
+
+    @Schema(description = "Máquina (backups de máquina inteira)", example = "3")
+    private Long machineId;
+
+    @Schema(description = "Tipos de backup")
+    private List<BackupKind> kind;
 
     @Schema(description = "Busca pelo nome do backup", example = "nginx")
     private String search;
@@ -22,6 +29,22 @@ public class BackupFilter {
 
     public void setDeviceId(Long deviceId) {
         this.deviceId = deviceId;
+    }
+
+    public Long getMachineId() {
+        return machineId;
+    }
+
+    public void setMachineId(Long machineId) {
+        this.machineId = machineId;
+    }
+
+    public List<BackupKind> getKind() {
+        return kind;
+    }
+
+    public void setKind(List<BackupKind> kind) {
+        this.kind = kind;
     }
 
     public String getSearch() {

@@ -43,6 +43,10 @@ public class AppTokenFilter extends OncePerRequestFilter {
     @Override
     protected boolean shouldNotFilter(HttpServletRequest request) {
         String path = request.getRequestURI();
+        // the customer panel has its own login (JWT, see SecurityConfig)
+        if (path.startsWith("/api/portal/") || path.startsWith("/ws/portal/")) {
+            return true;
+        }
         return expectedToken.length == 0 || !(path.startsWith("/api/") || path.startsWith("/ws/"));
     }
 

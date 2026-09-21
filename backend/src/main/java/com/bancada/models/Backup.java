@@ -1,5 +1,6 @@
 package com.bancada.models;
 
+import com.bancada.enums.BackupKind;
 import com.bancada.enums.BackupStatus;
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.persistence.CollectionTable;
@@ -23,7 +24,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 
-/** A tar.gz of chosen folders of a device, saved on this computer. */
+/** A tar.gz saved on this computer: chosen folders of a device, or a whole machine (docker export). */
 @Entity
 @Table(name = "backups")
 @Schema(description = "Backup de pastas de um dispositivo")
@@ -45,6 +46,16 @@ public class Backup {
         foreignKey = @ForeignKey(name = "FK_FROM_TBBACKUPS_FOR_TBOPERATIONS"))
     @Schema(description = "Operação que gerou o backup")
     private Operation operation;
+
+    @ManyToOne(fetch = FetchType.EAGER)
+    @JoinColumn(name = "fk_Id_Machine", foreignKey = @ForeignKey(name = "FK_FROM_TBBACKUPS_FOR_TBMACHINES"))
+    @Schema(description = "Máquina de origem (backups de máquina inteira)")
+    private Machine machine;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "kind", nullable = false, columnDefinition = "varchar(255) default 'FOLDERS'")
+    @Schema(description = "O que o backup guarda")
+    private BackupKind kind = BackupKind.FOLDERS;
 
     @Column(name = "name", nullable = false)
     @Schema(description = "Nome do backup")
@@ -92,6 +103,15 @@ public class Backup {
         this.filePath = filePath;
     }
 
+    /** Whole machine: the container file system, without the shared folders. */
+    public Backup(Machine machine, String name, String filePath) {
+        this.device = machine.getDevice();
+        this.machine = machine;
+        this.kind = BackupKind.MACHINE;
+        this.name = name;
+        this.filePath = filePath;
+    }
+
     public void complete(long sizeBytes, String sha256) {
         changeStatus(BackupStatus.AVAILABLE);
         this.sizeBytes = sizeBytes;
@@ -129,6 +149,14 @@ public class Backup {
 
     public void setOperation(Operation operation) {
         this.operation = operation;
+    }
+
+    public Machine getMachine() {
+        return machine;
+    }
+
+    public BackupKind getKind() {
+        return kind;
     }
 
     public String getName() {

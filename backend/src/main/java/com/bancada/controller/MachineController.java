@@ -2,11 +2,16 @@ package com.bancada.controller;
 
 import com.bancada.filter.MachineFilter;
 import com.bancada.records.MachineActionRequest;
+import com.bancada.request.MachineBackupRequest;
+import com.bancada.request.MachineReinstallRequest;
 import com.bancada.request.MachineRequest;
+import com.bancada.request.MachineRestoreRequest;
+import com.bancada.response.BackupResponse;
 import com.bancada.response.MachineCreationResponse;
 import com.bancada.response.MachineLogsResponse;
 import com.bancada.response.MachineResponse;
 import com.bancada.response.OperationResponse;
+import com.bancada.service.MachineMaintenanceService;
 import com.bancada.service.MachineService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
@@ -31,9 +36,11 @@ import org.springframework.web.bind.annotation.RestController;
 public class MachineController {
 
     private final MachineService machineService;
+    private final MachineMaintenanceService machineMaintenanceService;
 
-    public MachineController(MachineService machineService) {
+    public MachineController(MachineService machineService, MachineMaintenanceService machineMaintenanceService) {
         this.machineService = machineService;
+        this.machineMaintenanceService = machineMaintenanceService;
     }
 
     @Operation(summary = "Lista máquinas (as removidas ficam de fora sem filtro de situação)")
@@ -70,6 +77,28 @@ public class MachineController {
     @PostMapping("/{id}/remove")
     public ResponseEntity<OperationResponse> remove(@PathVariable Long id) {
         return ResponseEntity.status(HttpStatus.CREATED).body(new OperationResponse(machineService.remove(id)));
+    }
+
+    @Operation(summary = "Backup da máquina inteira (sistema, programas e arquivos), salvo neste computador")
+    @ApiResponse(responseCode = "201", description = "Backup iniciado")
+    @PostMapping("/{id}/backups")
+    public ResponseEntity<BackupResponse> backup(@PathVariable Long id, @Valid @RequestBody MachineBackupRequest request) {
+        return ResponseEntity.status(HttpStatus.CREATED).body(new BackupResponse(machineMaintenanceService.backup(id, request.name())));
+    }
+
+    @Operation(summary = "Volta a máquina ao estado de um backup dela")
+    @ApiResponse(responseCode = "201", description = "Restauração iniciada")
+    @PostMapping("/{id}/restore")
+    public ResponseEntity<OperationResponse> restore(@PathVariable Long id, @Valid @RequestBody MachineRestoreRequest request) {
+        return ResponseEntity.status(HttpStatus.CREATED)
+            .body(new OperationResponse(machineMaintenanceService.restore(id, request.backupId())));
+    }
+
+    @Operation(summary = "Reinstala a máquina do zero (formatar), na mesma ou em outra distribuição e versão")
+    @ApiResponse(responseCode = "201", description = "Reinstalação iniciada")
+    @PostMapping("/{id}/reinstall")
+    public ResponseEntity<OperationResponse> reinstall(@PathVariable Long id, @Valid @RequestBody MachineReinstallRequest request) {
+        return ResponseEntity.status(HttpStatus.CREATED).body(new OperationResponse(machineMaintenanceService.reinstall(id, request)));
     }
 
     @Operation(summary = "Últimas linhas de saída da máquina")

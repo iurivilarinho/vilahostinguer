@@ -18,6 +18,7 @@ public final class HttpRequestHead {
     static final int MAX_HEAD_BYTES = 32 * 1024;
     private static final byte[] HEAD_END = {'\r', '\n', '\r', '\n'};
     private static final List<String> FORWARDING_HEADERS = List.of("x-forwarded-for", "x-real-ip", "x-forwarded-proto", "x-forwarded-host");
+    private static final List<String> CONNECTION_HEADERS = List.of("connection", "keep-alive", "proxy-connection");
 
     private final String[] lines;
     private final byte[] rest;
@@ -64,19 +65,31 @@ public final class HttpRequestHead {
 
     /** The head as it goes to the destination: forwarding headers from the visitor dropped, ours added. */
     public byte[] forwardedBytes(String clientAddress) {
+        return forwardedBytes(clientAddress, "http", false);
+    }
+
+    /**
+     * @param protocol what the visitor used ({@code http}, or {@code https} when the gateway ended TLS)
+     * @param closeAfter one request per connection: {@code Connection: close} replaces the visitor's
+     *                   keep-alive, so the next request comes on a new connection with fresh headers
+     */
+    public byte[] forwardedBytes(String clientAddress, String protocol, boolean closeAfter) {
         StringBuilder head = new StringBuilder(lines[0]).append("\r\n");
         for (int index = 1; index < lines.length; index++) {
             int colon = lines[index].indexOf(':');
             String name = colon > 0 ? lines[index].substring(0, colon).trim().toLowerCase(Locale.ROOT) : "";
-            if (!FORWARDING_HEADERS.contains(name)) {
+            if (!FORWARDING_HEADERS.contains(name) && !(closeAfter && CONNECTION_HEADERS.contains(name))) {
                 head.append(lines[index]).append("\r\n");
             }
         }
         head.append("X-Forwarded-For: ").append(clientAddress).append("\r\n")
             .append("X-Real-IP: ").append(clientAddress).append("\r\n")
-            .append("X-Forwarded-Proto: http\r\n");
+            .append("X-Forwarded-Proto: ").append(protocol).append("\r\n");
         if (rawHost != null) {
             head.append("X-Forwarded-Host: ").append(rawHost).append("\r\n");
+        }
+        if (closeAfter) {
+            head.append("Connection: close\r\n");
         }
         head.append("\r\n");
         byte[] headBytes = head.toString().getBytes(StandardCharsets.ISO_8859_1);

@@ -17,7 +17,9 @@ arquivos, backups e armazenamento sem abrir outro programa.
 | **Arquivos** | Navegar, enviar, baixar, criar pasta e apagar (pastas só vazias). Funciona com dropbear sem sftp-server. |
 | **Backups** | `tar.gz` das pastas escolhidas, gerado no aparelho e gravado direto neste computador (nada fica no aparelho), com SHA-256. Baixar, restaurar com um clique, descartar (o registro fica). |
 | **Armazenamento** | Discos e partições com uso. Formatação (ext4/FAT32) só de partições de dados; as de sistema do aparelho (boot, modem, efs, persist…) e as montadas ficam protegidas, e a confirmação exige digitar o nome. Em kernel antigo (3.x), o ext4 sai sem `metadata_csum_seed`/`orphan_file` para ele conseguir montar. |
-| **Máquinas** | Máquinas Linux (Ubuntu, Debian, Alpine, Fedora, Rocky, Arch — só as que têm imagem para o processador) em contêineres Docker de sistema: versão, limite de CPU e memória, rede do dispositivo ou isolada com portas, pastas compartilhadas, usuário com sudo e SSH próprio. Ligar, desligar, reiniciar, terminal direto na máquina, saída, uso ao vivo. |
+| **Máquinas** | Máquinas Linux (Ubuntu, Debian, Alpine, Fedora, Rocky, Arch — só as que têm imagem para o processador) em contêineres Docker de sistema: versão, limite de CPU e memória, rede do dispositivo ou isolada com portas, pastas compartilhadas, usuário com sudo e SSH próprio. Ligar, desligar, reiniciar, terminal direto na máquina, saída, uso ao vivo. **Backup da máquina inteira** (`docker export` compactado, gravado neste PC), **restaurar** a partir dele, **reinstalar do zero** e **trocar a distribuição ou a versão** (com backup automático antes, se quiser). As pastas compartilhadas nunca são apagadas. |
+| **Negócio** | Planos com preço por ciclo (mensal, trimestral, semestral, anual com desconto), clientes, contratos, faturas, configuração do painel do cliente e trilha de auditoria de tudo o que muda. |
+| **Painel do cliente** | Site separado, no estilo do hPanel, em que o cliente se cadastra, escolhe um plano, paga por Pix e gerencia o próprio servidor: ligar/desligar, uso ao vivo, terminal no navegador, trocar sistema, backups, senha do SSH, faturas. Ver [Painel do cliente](#painel-do-cliente). |
 | **Acesso remoto** | **Domínios com DDNS** (DuckDNS, Cloudflare com curinga, qualquer URL de atualização, ou manual só conferindo) atualizados quando o IP público muda. **Rotas**: sites por nome numa porta HTTP compartilhada (pelo cabeçalho Host), sites HTTPS repassados pelo nome da conexão (SNI, o certificado fica na máquina) e portas TCP (SSH, bancos, jogos) — o PC recebe e repassa ao dispositivo ou máquina, porque aparelhos no cabo USB não são alcançáveis de fora. Abre as portas no roteador por UPnP (opcional), detecta CGNAT e mostra o tráfego de cada rota. |
 | **Atividades** | Toda operação (instalar, remover, serviço, atualizar, backup, restaurar, formatar) com a saída completa, ao vivo enquanto roda, e cancelamento. |
 
@@ -30,7 +32,9 @@ Bancada.exe (Tauri, janela nativa + bandeja + início automático)
      ├─ REST em /api/**, SSE em /api/events, WebSocket em /ws/terminal
      ├─ SQLite em ~/.bancada/bancada.db
      ├─ SSH (JSch) para os dispositivos
+     ├─ painel do cliente em 127.0.0.1:8748 (/api/portal, /ws/portal, portal.html)
      └─ gateway de acesso remoto: portas abertas em 0.0.0.0 só para as rotas ativas
+        e para o painel do cliente (HTTP e, com certificado, HTTPS)
 ```
 
 - A casca gera um **token de sessão** a cada abertura e o passa ao backend por variável de
@@ -58,7 +62,9 @@ src/                          React 19 + Vite + Tailwind 4
   components/                 componentes reutilizáveis (cada um com .stories.tsx)
   features/                   devices, credentials, terminal, apps, files, backups, storage,
                               machines, remote-access, operations, settings, dashboard,
-                              public/design-system
+                              public/design-system, business (planos, clientes, vendas,
+                              auditoria), portal (as telas do painel do cliente)
+  app/portal/                 casca, rotas e layout do painel do cliente (entrada portal.html)
   lib/                        cliente da API, tipos de paginação, formatação
 src-tauri/                    casca nativa (Rust)
 ```
@@ -84,7 +90,8 @@ npm run tauri dev
 - Testes: `npm test` (frontend) e `mvn test` (backend)
 
 Variáveis de ambiente do backend: `BANCADA_PORT` (8747), `BANCADA_DATA` (`~/.bancada`),
-`BANCADA_DB`, `BANCADA_TOKEN`.
+`BANCADA_DB`, `BANCADA_TOKEN`, `BANCADA_PORTAL_PORT` (8748). No `npm run dev`, o painel do cliente
+fica em `http://localhost:5173/portal.html`.
 
 ## Empacotar
 
@@ -119,6 +126,18 @@ recompilar com essas opções. Além disso, o `docker-setup.sh`:
 
 Sem cota de CPU (CFS) no kernel, o limite de CPU da máquina vira peso proporcional (`--cpu-shares`).
 
+Outros detalhes que só aparecem nesse kernel:
+
+- **Rede isolada (bridge)**: funciona, mas o proxy HTTP do aparelho escuta em `127.0.0.1`. O
+  script instala `/usr/local/sbin/bancada-bridge-proxy` (reaplicado no boot por `/etc/local.d`),
+  que liga `route_localnet` e redireciona `gateway-do-docker0:8899` para o proxy; as máquinas
+  isoladas saem para a internet por ali.
+- **umask 000 no `docker exec`**: tudo o que o painel roda dentro da máquina passa por
+  `umask 022`, e `/run/sshd` é corrigido, senão o sshd do Debian/Ubuntu recusa subir por
+  diretório gravável por todos.
+- **Rede do dispositivo**: a máquina recebe `--add-host nome:127.0.1.1` para o `sudo` resolver o
+  próprio nome.
+
 ### Acesso de fora
 
 1. Cadastre um domínio (o DuckDNS é grátis) e ligue o DDNS.
@@ -127,6 +146,61 @@ Sem cota de CPU (CFS) no kernel, o limite de CPU da máquina vira peso proporcio
    UPnP), e permita o Bancada no Firewall do Windows.
 4. Com CGNAT (a visão geral avisa), nenhum redirecionamento funciona: é preciso IP público da
    operadora ou um túnel.
+
+## Painel do cliente
+
+O Bancada também vende os servidores. O cliente acessa um site próprio (não o painel de admin), cria
+a conta, contrata um plano e gerencia a máquina sozinho — como no hPanel da Hostinger.
+
+**Como fica publicado.** O backend abre um segundo conector em `127.0.0.1:8748` que só responde
+`/api/portal/**`, `/ws/portal/**`, `portal.html`, os assets e o desafio do ACME; a API do admin
+nunca passa por essa porta. O gateway expõe esse conector na porta HTTP das rotas e, depois que o
+certificado existe, na porta HTTPS, terminando o TLS no próprio PC. Em **Negócio → Painel do
+cliente** ficam o domínio do painel, o e-mail do Let's Encrypt (o certificado sai pelo desafio
+HTTP-01 e é renovado sozinho 30 dias antes de vencer), o nome da empresa, a faixa de portas dos
+clientes, o domínio dos sites e as regras de cobrança.
+
+**Contratar.** O cliente escolhe plano, ciclo, sistema e nome do servidor e define a senha do root.
+Nasce um contrato *aguardando pagamento* com a primeira fatura. A fatura é paga por:
+
+- **Pix do Mercado Pago**, com o access token configurado: o painel mostra QR Code e copia-e-cola,
+  e o pagamento é conferido a cada minuto (ou no botão "Já paguei");
+- **manual**: sem token, o cliente vê as instruções e o administrador confirma em **Negócio →
+  Faturas**.
+
+Paga a fatura, o servidor é criado sozinho no dispositivo do plano: máquina em rede isolada, com
+três portas da faixa (SSH, 80 e 443) e as rotas correspondentes — com domínio de sites configurado,
+o site fica em `nome.dominio`.
+
+**Ciclo de cobrança** (a cada 10 minutos): fatura de renovação alguns dias antes do vencimento;
+atraso além do limite suspende (a máquina é desligada e as rotas saem do ar); atraso maior cancela
+e apaga o servidor; pedidos não pagos em 3 dias são cancelados. Pagar uma fatura atrasada reativa.
+O cliente pode cancelar no fim do período ou desistir do cancelamento.
+
+**No painel o cliente**: vê o resumo, as faturas e os servidores; liga, desliga e reinicia; vê o
+uso ao vivo; abre o terminal no navegador; reinstala ou troca o sistema; faz, baixa, restaura e
+descarta backups (limite por plano); troca a senha do SSH; edita os dados e a senha da conta.
+
+**Segurança.**
+
+- Senhas com BCrypt; sessão em JWT num cookie `httpOnly` `SameSite=Lax` (`Secure` quando veio por
+  HTTPS), invalidada ao trocar a senha ou ao bloquear o cliente.
+- 5 tentativas erradas por e-mail ou 20 por IP bloqueiam o login por 15 minutos.
+- Cada recurso é conferido contra o dono; o de outro cliente responde como inexistente (404).
+- O WebSocket do terminal só aceita a mesma origem.
+- Erros internos voltam como mensagem genérica.
+- Toda mudança de cliente, plano, contrato, fatura e ação no servidor fica na **auditoria**, com o
+  antes e o depois.
+
+**Limites que valem conhecer.**
+
+- Não há envio de e-mail: a recuperação de senha é pelo suporte (o admin redefine em
+  **Clientes**).
+- As máquinas são contêineres num kernel compartilhado (3.18 no J4+, sem as proteções dos kernels
+  novos). Serve para clientes conhecidos, não para estranhos com root que podem tentar escapar do
+  contêiner.
+- Para o painel e os servidores serem vistos de fora valem as mesmas condições de
+  [Acesso de fora](#acesso-de-fora): portas redirecionadas e sem CGNAT.
 
 ## Decisões em relação às skills do projeto
 
@@ -141,3 +215,16 @@ Sem cota de CPU (CFS) no kernel, o limite de CPU da máquina vira peso proporcio
   `EnumCheckCleaner` reconstrói as tabelas sem esses `CHECK` antes do Hibernate subir.
 - **Gateway** fica em `gateway/` (infraestrutura de sockets), fora de `service/`, que só tem
   classes `@Service`.
+- **Painel do cliente no mesmo projeto**: é uma segunda página do Vite (`portal.html`, entrada
+  `src/portal-main.tsx`) com casca e rotas próprias em `app/portal/` e telas em
+  `features/portal/`. Os componentes, o design system e o cliente HTTP são os mesmos; o bundle do
+  admin não entra no do cliente.
+- **Duas autenticações**: o admin continua com o token de sessão da casca (`AppTokenFilter`); o
+  Spring Security só cuida de `/api/portal/**` e `/ws/portal/**`, sem sessão, com o filtro de JWT.
+- **Auditoria** segue a skill de audit log: registro só de inclusão, com fotografias em records
+  (`*Snapshot`) e `createdBy`/`updatedBy` nas entidades do negócio.
+- **`transaction_mode=IMMEDIATE`** no SQLite: com o padrão (DEFERRED), uma transação que lia e
+  depois escrevia falhava com `SQLITE_BUSY_SNAPSHOT` quando outra conexão escrevia no meio, o que
+  derrubava operações em segundo plano.
+- **Eventos depois do commit** (`@TransactionalEventListener`) não gravam nada no próprio
+  listener — o que ele escreve se perde; o trabalho vai para o executor de operações.

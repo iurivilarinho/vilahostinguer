@@ -22,8 +22,10 @@ import com.bancada.validation.Hostnames;
 import jakarta.persistence.EntityNotFoundException;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
@@ -115,6 +117,31 @@ public class RouteService {
         Route saved = routeRepository.save(route);
         changed("Rota " + describe(saved) + ": " + status.getDescription().toLowerCase());
         return saved;
+    }
+
+    @Transactional(readOnly = true)
+    public List<Route> routesOfMachine(Long machineId) {
+        return routeRepository.findByMachineIdAndStatusIn(machineId, List.of(RouteStatus.ACTIVE, RouteStatus.PAUSED));
+    }
+
+    /** Public ports taken by TCP routes, plus the shared site ports and the panel port. */
+    @Transactional(readOnly = true)
+    public Set<Integer> takenPublicPorts() {
+        Set<Integer> taken = new HashSet<>();
+        routeRepository.findByStatusNot(RouteStatus.REMOVED).stream()
+            .filter(route -> route.getPublicPort() != null)
+            .forEach(route -> taken.add(route.getPublicPort()));
+        AppSettings settings = settingsService.get();
+        taken.add(settings.getGatewayHttpPort());
+        taken.add(settings.getGatewayTlsPort());
+        taken.add(panelPort);
+        return taken;
+    }
+
+    @Transactional(readOnly = true)
+    public boolean isSiteNameFree(String hostname) {
+        return !routeRepository.existsByTypeAndHostnameAndStatusNotAndIdNot(RouteType.HTTP, hostname, RouteStatus.REMOVED, -1L)
+            && !routeRepository.existsByTypeAndHostnameAndStatusNotAndIdNot(RouteType.TLS, hostname, RouteStatus.REMOVED, -1L);
     }
 
     /** Rejects gateway ports already taken by a TCP route (or by the panel itself). */

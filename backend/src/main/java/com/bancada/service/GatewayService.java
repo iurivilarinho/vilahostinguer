@@ -5,6 +5,7 @@ import com.bancada.enums.RouteType;
 import com.bancada.gateway.GatewayListener;
 import com.bancada.gateway.TrafficCounter;
 import com.bancada.models.AppSettings;
+import com.bancada.models.PortalSettings;
 import com.bancada.records.RouteTarget;
 import com.bancada.records.RoutesChangedEvent;
 import com.bancada.request.GatewaySettingsRequest;
@@ -32,8 +33,10 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Function;
+import javax.net.ssl.SSLContext;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.context.event.EventListener;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -50,12 +53,19 @@ import org.springframework.transaction.event.TransactionalEventListener;
 public class GatewayService {
 
     private static final Logger LOG = LoggerFactory.getLogger(GatewayService.class);
+    /** Traffic of the customer panel is counted under this id (no route row). */
+    public static final Long PORTAL_ROUTE_ID = 0L;
+    private static final String LOOPBACK = "127.0.0.1";
+    private static final String PORTAL_LABEL = "O painel do cliente";
 
     private final RouteService routeService;
     private final SettingsService settingsService;
     private final UpnpService upnpService;
     private final PublicIpService publicIpService;
     private final EventService eventService;
+    private final PortalSettingsService portalSettingsService;
+    private final PortalCertificateService portalCertificateService;
+    private final int portalPort;
     private final ExecutorService executor = Executors.newCachedThreadPool(daemonThreads());
     private final Map<Integer, GatewayListener> listeners = new HashMap<>();
     private final Map<Integer, String> listenerErrors = new ConcurrentHashMap<>();
@@ -64,12 +74,16 @@ public class GatewayService {
     private volatile Map<Integer, Integer> routesPerPort = Map.of();
 
     public GatewayService(RouteService routeService, SettingsService settingsService, UpnpService upnpService,
-                          PublicIpService publicIpService, EventService eventService) {
+                          PublicIpService publicIpService, EventService eventService, PortalSettingsService portalSettingsService,
+                          PortalCertificateService portalCertificateService, @Value("${bancada.portal.port}") int portalPort) {
         this.routeService = routeService;
         this.settingsService = settingsService;
         this.upnpService = upnpService;
         this.publicIpService = publicIpService;
         this.eventService = eventService;
+        this.portalSettingsService = portalSettingsService;
+        this.portalCertificateService = portalCertificateService;
+        this.portalPort = portalPort;
     }
 
     @EventListener(ApplicationReadyEvent.class)
@@ -99,6 +113,15 @@ public class GatewayService {
                 case HTTP -> http.put(target.hostname(), target);
                 case TLS -> tls.put(target.hostname(), target);
                 case TCP -> tcp.put(target.publicPort(), target);
+            }
+        }
+        PortalSettings portal = portalSettingsService.get();
+        if (settings.isGatewayEnabled() && portal.isPublished()) {
+            String name = portal.getHostname();
+            http.put(name, new RouteTarget(PORTAL_ROUTE_ID, RouteType.HTTP, name, null, LOOPBACK, portalPort, PORTAL_LABEL, null, true));
+            SSLContext certificate = portalCertificateService.contextFor(name);
+            if (certificate != null) {
+                tls.put(name, new RouteTarget(PORTAL_ROUTE_ID, RouteType.TLS, name, null, LOOPBACK, portalPort, PORTAL_LABEL, certificate, true));
             }
         }
         Map<Integer, RouteType> wanted = new LinkedHashMap<>();

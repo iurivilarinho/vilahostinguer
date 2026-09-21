@@ -22,6 +22,7 @@ import {
 import { usePaginatedData } from "@/app/hooks/use-paginated-data";
 import { getApiErrorMessage } from "@/app/utils/get-api-error-message";
 import { Rotas } from "@/app/variables/rotas";
+import { useRestoreMachineMutation } from "@/features/machines/api";
 import { openOperationViewer } from "@/features/operations";
 import { formatBytes, formatDateTime } from "@/lib/format";
 import { backupDownloadUrl, useBackupsQuery, useDiscardBackupMutation, useRestoreBackupMutation, type BackupDto, type BackupFilter, type BackupStatus } from "../api";
@@ -45,7 +46,11 @@ type BackupsTableProps = {
 export const BackupsTable = ({ filter, showDevice = true, storageKey, emptyAction }: BackupsTableProps) => {
   const [restoring, setRestoring] = useState<BackupDto | null>(null);
   const [discarding, setDiscarding] = useState<BackupDto | null>(null);
-  const { mutate: restore, isPending: isRestoring } = useRestoreBackupMutation({ onSuccess: (operation) => openOperationViewer(operation.id) });
+  const { mutate: restore, isPending: isRestoringFolders } = useRestoreBackupMutation({ onSuccess: (operation) => openOperationViewer(operation.id) });
+  const { mutate: restoreMachine, isPending: isRestoringMachine } = useRestoreMachineMutation({
+    onSuccess: (operation) => openOperationViewer(operation.id),
+  });
+  const isRestoring = isRestoringFolders || isRestoringMachine;
   const { mutate: discard, isPending: isDiscarding } = useDiscardBackupMutation();
   const {
     data: backups,
@@ -83,7 +88,7 @@ export const BackupsTable = ({ filter, showDevice = true, storageKey, emptyActio
               <TableRow>
                 <TableHead>Backup</TableHead>
                 {showDevice && <TableHead>Dispositivo</TableHead>}
-                <TableHead>Pastas</TableHead>
+                <TableHead>Conteúdo</TableHead>
                 <TableHead>Tamanho</TableHead>
                 <TableHead>Situação</TableHead>
                 <TableHead>Criado</TableHead>
@@ -106,10 +111,14 @@ export const BackupsTable = ({ filter, showDevice = true, storageKey, emptyActio
                     </TableCell>
                   )}
                   <TableCell>
-                    <Typography variant="mono" className="text-muted-foreground" title={backup.paths.join("\n")}>
-                      {backup.paths.slice(0, 3).join(" ")}
-                      {backup.paths.length > 3 ? ` +${backup.paths.length - 3}` : ""}
-                    </Typography>
+                    {backup.kind === "MACHINE" ? (
+                      <Badge tone="primary">Máquina {backup.machine?.name} inteira</Badge>
+                    ) : (
+                      <Typography variant="mono" className="text-muted-foreground" title={backup.paths.join("\n")}>
+                        {backup.paths.slice(0, 3).join(" ")}
+                        {backup.paths.length > 3 ? ` +${backup.paths.length - 3}` : ""}
+                      </Typography>
+                    )}
                   </TableCell>
                   <TableCell>
                     <Typography variant="body-sm">{formatBytes(backup.sizeBytes)}</Typography>
@@ -163,10 +172,24 @@ export const BackupsTable = ({ filter, showDevice = true, storageKey, emptyActio
         open={restoring !== null}
         onOpenChange={(open) => !open && setRestoring(null)}
         title={restoring ? `Restaurar "${restoring.name}"?` : "Restaurar"}
-        description="Os arquivos do backup sobrescrevem os atuais no dispositivo. Arquivos criados depois do backup continuam lá."
+        description={
+          restoring?.kind === "MACHINE"
+            ? "A máquina volta exatamente ao estado do backup: tudo o que mudou dentro dela depois disso se perde. As pastas compartilhadas não são tocadas."
+            : "Os arquivos do backup sobrescrevem os atuais no dispositivo. Arquivos criados depois do backup continuam lá."
+        }
         confirmLabel="Restaurar"
+        destructive={restoring?.kind === "MACHINE"}
         loading={isRestoring}
-        onConfirm={() => restoring && restore(restoring.id, { onSettled: () => setRestoring(null) })}
+        onConfirm={() => {
+          if (!restoring) {
+            return;
+          }
+          if (restoring.kind === "MACHINE" && restoring.machine) {
+            restoreMachine({ id: restoring.machine.id, backupId: restoring.id }, { onSettled: () => setRestoring(null) });
+          } else {
+            restore(restoring.id, { onSettled: () => setRestoring(null) });
+          }
+        }}
       />
       <ConfirmDialog
         open={discarding !== null}

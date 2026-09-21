@@ -1,5 +1,6 @@
 package com.bancada.response;
 
+import com.bancada.enums.BackupKind;
 import com.bancada.enums.BackupStatus;
 import com.bancada.models.Backup;
 import io.swagger.v3.oas.annotations.media.Schema;
@@ -14,6 +15,15 @@ public record BackupResponse(
 
     @Schema(description = "Dispositivo de origem")
     DeviceBasicResponse device,
+
+    @Schema(description = "Máquina de origem (backups de máquina inteira)")
+    MachineBasicResponse machine,
+
+    @Schema(description = "O que o backup guarda")
+    BackupKind kind,
+
+    @Schema(description = "Descrição do tipo", example = "Máquina inteira")
+    String kindDescription,
 
     @Schema(description = "Operação que gerou o backup", example = "12")
     Long operationId,
@@ -48,6 +58,8 @@ public record BackupResponse(
 
     public BackupResponse(Backup backup) {
         this(backup.getId(), new DeviceBasicResponse(backup.getDevice()),
+            backup.getMachine() == null ? null : new MachineBasicResponse(backup.getMachine()), backup.getKind(),
+            backup.getKind().getDescription(),
             backup.getOperation() == null ? null : backup.getOperation().getId(), backup.getName(),
             List.copyOf(backup.getPaths()), backup.getFilePath(), backup.getSizeBytes(), backup.getSha256(),
             backup.getStatus(), backup.getStatus().getDescription(), backup.getCreatedAt(), backup.getUpdatedAt());

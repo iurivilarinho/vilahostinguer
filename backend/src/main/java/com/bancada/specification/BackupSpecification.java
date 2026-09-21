@@ -1,5 +1,6 @@
 package com.bancada.specification;
 
+import com.bancada.enums.BackupKind;
 import com.bancada.enums.BackupStatus;
 import com.bancada.models.Backup;
 import java.util.List;
@@ -30,5 +31,19 @@ public final class BackupSpecification {
             return Specification.where(null);
         }
         return (root, query, builder) -> root.get("status").in(statuses);
+    }
+
+    public static Specification<Backup> machine(Long machineId) {
+        if (machineId == null) {
+            return Specification.where(null);
+        }
+        return (root, query, builder) -> builder.equal(root.get("machine").get("id"), machineId);
+    }
+
+    public static Specification<Backup> kindIn(List<BackupKind> kinds) {
+        if (kinds == null || kinds.isEmpty()) {
+            return Specification.where(null);
+        }
+        return (root, query, builder) -> root.get("kind").in(kinds);
     }
 }

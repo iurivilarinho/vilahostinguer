@@ -4,6 +4,8 @@ import { Card, ConfirmDialog, EmptyState, Skeleton } from "@/components";
 import { openOperationViewer } from "@/features/operations";
 import { RouteSheet, type RouteSheetPreset } from "@/features/remote-access";
 import { useMachineActionMutation, useMachineStatsQuery, useRemoveMachineMutation, type MachineAction, type MachineDto } from "../api";
+import { ReinstallSheet } from "../form/reinstall-sheet";
+import { MachineBackupsDialog } from "./machine-backups-dialog";
 import { MachineCard } from "./machine-card";
 import { MachineLogsDialog, MachineTerminalDialog } from "./machine-dialogs";
 
@@ -28,6 +30,8 @@ export const MachinesGrid = ({ machines, isLoading, deviceId, deviceHost, showDe
   const [logs, setLogs] = useState<MachineDto | null>(null);
   const [removing, setRemoving] = useState<MachineDto | null>(null);
   const [publishing, setPublishing] = useState<RouteSheetPreset | undefined>();
+  const [backups, setBackups] = useState<MachineDto | null>(null);
+  const [reinstalling, setReinstalling] = useState<MachineDto | null>(null);
   const anyRunning = machines.some((machine) => machine.status === "RUNNING");
   const { data: stats } = useMachineStatsQuery(deviceId, { enabled: anyRunning });
   const onStarted = { onSuccess: (operation: { id: number }) => openOperationViewer(operation.id) };
@@ -71,11 +75,15 @@ export const MachinesGrid = ({ machines, isLoading, deviceId, deviceHost, showDe
             onAction={(target, action: MachineAction) => runAction({ id: target.id, action })}
             onRemove={setRemoving}
             onPublish={(target) => setPublishing(publishPreset(target))}
+            onBackups={setBackups}
+            onReinstall={setReinstalling}
           />
         ))}
       </div>
       <MachineTerminalDialog machine={terminal} onClose={() => setTerminal(null)} />
       <MachineLogsDialog machine={logs} onClose={() => setLogs(null)} />
+      <MachineBackupsDialog machine={backups} onClose={() => setBackups(null)} />
+      <ReinstallSheet machine={reinstalling} onClose={() => setReinstalling(null)} />
       <RouteSheet open={publishing !== undefined} onOpenChange={(open) => !open && setPublishing(undefined)} preset={publishing} />
       <ConfirmDialog
         open={removing !== null}

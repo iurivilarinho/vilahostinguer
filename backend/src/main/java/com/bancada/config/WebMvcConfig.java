@@ -53,6 +53,10 @@ public class WebMvcConfig implements WebMvcConfigurer {
                     if (requested.exists() && requested.isReadable()) {
                         return requested;
                     }
+                    if (resourcePath.startsWith("portal")) {
+                        // the customer panel never falls back to the administrator page
+                        return null;
+                    }
                     Resource index = new ClassPathResource("/static/index.html");
                     return index.exists() ? index : null;
                 }

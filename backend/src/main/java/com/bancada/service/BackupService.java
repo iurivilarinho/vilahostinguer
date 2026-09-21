@@ -1,15 +1,19 @@
 package com.bancada.service;
 
+import com.bancada.enums.BackupKind;
 import com.bancada.enums.BackupStatus;
+import com.bancada.enums.MachineStatus;
 import com.bancada.enums.OperationType;
 import com.bancada.filter.BackupFilter;
 import com.bancada.models.Backup;
 import com.bancada.models.Device;
+import com.bancada.models.Machine;
 import com.bancada.models.Operation;
 import com.bancada.records.CommandResult;
 import com.bancada.repository.BackupRepository;
 import com.bancada.request.BackupRequest;
 import com.bancada.specification.BackupSpecification;
+import jakarta.annotation.PostConstruct;
 import jakarta.persistence.EntityNotFoundException;
 import java.io.BufferedOutputStream;
 import java.io.IOException;
@@ -62,11 +66,21 @@ public class BackupService {
         this.operationService = operationService;
     }
 
+    /** A backup interrupted by closing the app can never finish; its partial file is useless. */
+    @PostConstruct
+    public void failInterrupted() {
+        for (Backup backup : backupRepository.findByStatus(BackupStatus.CREATING)) {
+            markFailed(backup.getId(), backup.getFilePath() == null ? null : Paths.get(backup.getFilePath()));
+        }
+    }
+
     @Transactional(readOnly = true)
     public Page<Backup> search(BackupFilter filter, Pageable pageable) {
         Specification<Backup> specification = Specification.where(BackupSpecification.device(filter.getDeviceId()))
             .and(BackupSpecification.search(filter.getSearch()))
-            .and(BackupSpecification.statusIn(filter.getStatus()));
+            .and(BackupSpecification.statusIn(filter.getStatus()))
+            .and(BackupSpecification.machine(filter.getMachineId()))
+            .and(BackupSpecification.kindIn(filter.getKind()));
         return backupRepository.findAll(specification, pageable);
     }
 
@@ -84,16 +98,73 @@ public class BackupService {
         Backup backup = backupRepository.save(new Backup(device, request.name().trim(), paths, file.toString()));
         Long backupId = backup.getId();
         Operation operation = operationService.start(device, OperationType.BACKUP, "Backup: " + backup.getName(),
-            "backup:" + backupId, operationId -> produce(backupId, device, paths, file, operationId));
+            "backup:" + backupId, operationId -> produce(backupId, device, foldersScript(paths), String.join(", ", paths), file, operationId));
         // Only for the response: the link is persisted by the job itself, so this detached copy is never saved.
         backup.setOperation(operation);
         return backup;
+    }
+
+    /** Whole-machine backups still worth showing (being made, available or failed), newest first. */
+    @Transactional(readOnly = true)
+    public List<Backup> machineBackups(Long machineId) {
+        return backupRepository.findByMachineIdAndKindAndStatusInOrderByCreatedAtDesc(machineId, BackupKind.MACHINE,
+            List.of(BackupStatus.CREATING, BackupStatus.AVAILABLE, BackupStatus.FAILED));
+    }
+
+    /** Backups that take a slot of the plan: being made or available. */
+    @Transactional(readOnly = true)
+    public long usedMachineSlots(Long machineId) {
+        return backupRepository.countByMachineIdAndKindAndStatusIn(machineId, BackupKind.MACHINE,
+            List.of(BackupStatus.CREATING, BackupStatus.AVAILABLE));
+    }
+
+    /** Whole machine, in its own operation. */
+    public Backup createForMachine(Machine machine, String name) {
+        Backup backup = registerMachineBackup(machine, name);
+        Long backupId = backup.getId();
+        Operation operation = operationService.start(machine.getDevice(), OperationType.MACHINE_BACKUP, "Backup: " + backup.getName(),
+            "backup:" + backupId, operationId -> produceMachine(backupId, operationId));
+        backup.setOperation(operation);
+        return backup;
+    }
+
+    /** Record of a machine backup still to be produced (inside another operation, like a reinstall). */
+    @Transactional
+    public Backup registerMachineBackup(Machine machine, String name) {
+        if (machine.getStatus() == MachineStatus.REMOVED || machine.getStatus() == MachineStatus.CREATING) {
+            throw new IllegalStateException("A máquina " + machine.getName() + " está " + machine.getStatus().getDescription().toLowerCase() + ".");
+        }
+        String cleanName = name == null || name.isBlank() ? "Máquina " + machine.getName() : name.trim();
+        Path file = Paths.get(settingsService.get().getBackupDirectory(), String.valueOf(machine.getDevice().getId()), "maquinas",
+            FILE_STAMP.format(LocalDateTime.now()) + "-" + slug(machine.getName()) + ".tar.gz");
+        return backupRepository.save(new Backup(machine, cleanName, file.toString()));
+    }
+
+    /**
+     * docker export of the machine, gzip on the device, straight into the file here. The machine is
+     * paused while exporting, so the files are consistent (a copy of a running database is not).
+     */
+    public int produceMachine(Long backupId, Long operationId) {
+        Backup backup = findById(backupId);
+        String script = "name=" + SshService.quote(backup.getMachine().getContainerName()) + "\n"
+            + "docker inspect \"$name\" >/dev/null 2>&1 || { echo 'A máquina não existe no dispositivo.' >&2; exit 2; }\n"
+            + "if [ \"$(docker inspect -f '{{.State.Running}}' \"$name\")\" = true ]; then\n"
+            + "  echo 'Máquina pausada durante a cópia.' >&2\n"
+            + "  docker pause \"$name\" >/dev/null && trap 'docker unpause \"$name\" >/dev/null 2>&1' EXIT\n"
+            + "fi\n"
+            + "set -o pipefail 2>/dev/null\n"
+            + "docker export \"$name\" | gzip -c\n";
+        return produce(backupId, backup.getDevice(), script, "máquina " + backup.getMachine().getName(), Paths.get(backup.getFilePath()),
+            operationId);
     }
 
     public Operation restore(Long id) {
         Backup backup = findById(id);
         if (backup.getStatus() != BackupStatus.AVAILABLE) {
             throw new IllegalStateException("Só backups disponíveis podem ser restaurados.");
+        }
+        if (backup.getKind() == BackupKind.MACHINE) {
+            throw new IllegalStateException("Backups de máquina são restaurados pela própria máquina.");
         }
         Path file = Paths.get(backup.getFilePath());
         if (!Files.isReadable(file)) {
@@ -140,17 +211,21 @@ public class BackupService {
         return file;
     }
 
-    private int produce(Long backupId, Device device, List<String> paths, Path file, Long operationId) {
-        Backup linked = findById(backupId);
-        linked.setOperation(operationService.findById(operationId));
-        backupRepository.save(linked);
-        operationService.appendOutput(operationId, "== Gerando backup de " + String.join(", ", paths) + " ==\n");
+    private static String foldersScript(List<String> paths) {
         StringBuilder list = new StringBuilder();
         paths.forEach(path -> list.append(' ').append(SshService.quote(path.substring(1))));
-        String script = "cd / || exit 1\nset --\nfor item in" + list + "; do\n"
+        return "cd / || exit 1\nset --\nfor item in" + list + "; do\n"
             + "\tif [ -e \"$item\" ]; then set -- \"$@\" \"$item\"; else echo \"Ignorando /$item (não existe)\" >&2; fi\n"
             + "done\n[ $# -gt 0 ] || { echo 'Nenhuma das pastas existe no dispositivo.' >&2; exit 2; }\n"
             + "tar czf - \"$@\"\n";
+    }
+
+    /** Runs the script on the device and writes its standard output, a tar.gz, into the backup file. */
+    private int produce(Long backupId, Device device, String script, String description, Path file, Long operationId) {
+        Backup linked = findById(backupId);
+        linked.setOperation(operationService.findById(operationId));
+        backupRepository.save(linked);
+        operationService.appendOutput(operationId, "== Gerando backup de " + description + " ==\n");
         MessageDigest digest;
         try {
             digest = MessageDigest.getInstance("SHA-256");
@@ -171,7 +246,8 @@ public class BackupService {
                 Backup backup = findById(backupId);
                 backup.complete(size, HexFormat.of().formatHex(digest.digest()));
                 backupRepository.save(backup);
-                operationService.appendOutput(operationId, "== Salvo em " + file + " (" + size + " bytes) ==\n");
+                // no local path here: customers read this log in their panel (the path stays on the backup record)
+                operationService.appendOutput(operationId, "== Backup salvo (" + String.format("%,.1f MB", size / 1_048_576.0) + ") ==\n");
                 return 0;
             }
         } catch (IOException exception) {
@@ -189,6 +265,9 @@ public class BackupService {
         Backup backup = findById(backupId);
         backup.changeStatus(BackupStatus.FAILED);
         backupRepository.save(backup);
+        if (file == null) {
+            return;
+        }
         try {
             Files.deleteIfExists(file);
         } catch (IOException exception) {

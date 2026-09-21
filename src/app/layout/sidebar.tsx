@@ -1,4 +1,4 @@
-import { Activity, Archive, Boxes, Globe, KeyRound, LayoutDashboard, Palette, Server, Settings, SquareTerminal } from "lucide-react";
+import { Activity, Archive, Boxes, CreditCard, Globe, History, KeyRound, LayoutDashboard, Package, Palette, Receipt, Server, Settings, SquareTerminal, Store, Users } from "lucide-react";
 import type { ReactNode } from "react";
 import { NavLink } from "react-router-dom";
 import { Typography } from "@/components";
@@ -21,6 +21,15 @@ const MAIN_ITEMS: NavItem[] = [
   { to: Rotas.terminal, label: "Terminal", icon: <SquareTerminal /> },
   { to: Rotas.backups, label: "Backups", icon: <Archive /> },
   { to: Rotas.operations, label: "Atividades", icon: <Activity /> },
+];
+
+const BUSINESS_ITEMS: NavItem[] = [
+  { to: Rotas.business.portal, label: "Painel do cliente", icon: <Store /> },
+  { to: Rotas.business.plans, label: "Planos", icon: <Package /> },
+  { to: Rotas.business.customers, label: "Clientes", icon: <Users /> },
+  { to: Rotas.business.subscriptions, label: "Assinaturas", icon: <CreditCard /> },
+  { to: Rotas.business.invoices, label: "Faturas", icon: <Receipt /> },
+  { to: Rotas.business.audit, label: "Auditoria", icon: <History /> },
 ];
 
 const ACCOUNT_ITEMS: NavItem[] = [
@@ -71,6 +80,7 @@ export const Sidebar = () => (
     </div>
     <nav className="flex flex-1 flex-col gap-6 overflow-y-auto px-3 py-2">
       <NavGroup title="Painel" items={MAIN_ITEMS} />
+      <NavGroup title="Negócio" items={BUSINESS_ITEMS} />
       <NavGroup title="Conta" items={ACCOUNT_ITEMS} />
     </nav>
     <div className="p-3">

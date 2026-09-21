@@ -9,6 +9,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
@@ -57,9 +58,28 @@ public class GlobalExceptionHandler {
         return build(HttpStatus.NOT_FOUND, "Recurso não encontrado: " + safe(exception.getResourcePath()));
     }
 
+    @ExceptionHandler(PortalAuthenticationException.class)
+    public ResponseEntity<ApiErrorResponse> portalAuthentication(PortalAuthenticationException exception) {
+        return build(HttpStatus.UNAUTHORIZED, safe(exception.getMessage()));
+    }
+
+    @ExceptionHandler(TooManyAttemptsException.class)
+    public ResponseEntity<ApiErrorResponse> tooManyAttempts(TooManyAttemptsException exception) {
+        return build(HttpStatus.TOO_MANY_REQUESTS, safe(exception.getMessage()));
+    }
+
+    @ExceptionHandler(AccessDeniedException.class)
+    public ResponseEntity<ApiErrorResponse> accessDenied(AccessDeniedException exception) {
+        return build(HttpStatus.FORBIDDEN, "Sem permissão para esta ação.");
+    }
+
+    /** Customers never see the details of an unexpected error; the administrator does (the log has both). */
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ApiErrorResponse> generic(Exception exception, HttpServletRequest request) {
         LOG.error("Unhandled error on {}: {}", request.getRequestURI(), exception.getMessage(), exception);
+        if (request.getRequestURI().startsWith("/api/portal/")) {
+            return build(HttpStatus.INTERNAL_SERVER_ERROR, "Algo deu errado do nosso lado. Tente de novo em instantes.");
+        }
         return build(HttpStatus.INTERNAL_SERVER_ERROR, "Erro interno: " + safe(exception.getMessage()));
     }
 

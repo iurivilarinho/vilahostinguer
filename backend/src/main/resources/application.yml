@@ -2,12 +2,18 @@ server:
   # Only this machine talks to the backend: the Tauri window and nothing else.
   address: 127.0.0.1
   port: ${BANCADA_PORT:8747}
+  # The customer panel comes through the gateway (127.0.0.1): X-Forwarded-For/Proto give the
+  # visitor address and whether it used HTTPS.
+  forward-headers-strategy: native
 
 spring:
   application:
     name: bancada
   datasource:
-    url: "jdbc:sqlite:${BANCADA_DB:${user.home}/.bancada/bancada.db}?journal_mode=WAL&synchronous=NORMAL"
+    # IMMEDIATE: a transaction takes the write lock when it begins and waits for it (busy_timeout);
+    # the default DEFERRED fails at once with SQLITE_BUSY_SNAPSHOT when another connection wrote
+    # after it started reading, which killed background operations.
+    url: "jdbc:sqlite:${BANCADA_DB:${user.home}/.bancada/bancada.db}?journal_mode=WAL&synchronous=NORMAL&transaction_mode=IMMEDIATE"
     driver-class-name: org.sqlite.JDBC
     hikari:
       maximum-pool-size: 6
@@ -47,5 +53,8 @@ bancada:
   # the filter is then disabled and a warning is logged.
   token: ${BANCADA_TOKEN:}
   data-dir: ${BANCADA_DATA:${user.home}/.bancada}
+  portal:
+    # Local port of the customer panel, published on the internet by the gateway.
+    port: ${BANCADA_PORTAL_PORT:8748}
 
 parent-pid: 0

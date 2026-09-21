@@ -126,16 +126,17 @@ public class OperationService {
     }
 
     private void execute(Long operationId, ToIntFunction<Long> work) {
-        Operation operation = findById(operationId);
         if (cancelRequests.contains(operationId)) {
             finish(operationId, OperationStatus.CANCELED, null);
             return;
         }
-        operation.start();
-        operationRepository.save(operation);
         Integer exitCode = null;
         OperationStatus result;
         try {
+            // inside the try: a failure to mark it running must end the operation, not leave it pending forever
+            Operation operation = findById(operationId);
+            operation.start();
+            operationRepository.save(operation);
             exitCode = work.applyAsInt(operationId);
             if (cancelRequests.contains(operationId)) {
                 result = OperationStatus.CANCELED;

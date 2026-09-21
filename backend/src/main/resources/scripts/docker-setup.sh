@@ -123,6 +123,44 @@ if runc --version 2>/dev/null | grep -q libpathrs \
 	fi
 fi
 
+# Internet through a proxy on the device's loopback (the USB phones): machines on the isolated
+# network cannot reach 127.0.0.1 of the device, so the bridge gateway port is redirected to it.
+# The redirect is redone at every boot, after docker0 exists.
+case "${http_proxy:-}" in
+	*127.0.0.1:* | *localhost:*)
+		proxy_port=$(printf '%s' "$http_proxy" | sed -n 's#.*:\([0-9][0-9]*\)/*$#\1#p')
+		if [ -n "$proxy_port" ]; then
+			mkdir -p /usr/local/sbin
+			cat > /usr/local/sbin/bancada-bridge-proxy <<SCRIPT
+#!/bin/sh
+# Machines on the isolated Docker network reach the device proxy through the bridge gateway.
+export PATH=/usr/local/sbin:\$PATH
+tries=0
+while ! ip link show docker0 >/dev/null 2>&1 && [ \$tries -lt 90 ]; do tries=\$((tries + 1)); sleep 2; done
+gateway=\$(ip -4 addr show docker0 2>/dev/null | awk '/inet /{split(\$2, a, "/"); print a[1]; exit}')
+[ -n "\$gateway" ] || exit 0
+sysctl -w net.ipv4.conf.docker0.route_localnet=1 >/dev/null
+iptables -t nat -C PREROUTING -i docker0 -p tcp -d "\$gateway" --dport $proxy_port -j DNAT --to-destination 127.0.0.1:$proxy_port 2>/dev/null \\
+	|| iptables -t nat -I PREROUTING -i docker0 -p tcp -d "\$gateway" --dport $proxy_port -j DNAT --to-destination 127.0.0.1:$proxy_port
+SCRIPT
+			chmod 755 /usr/local/sbin/bancada-bridge-proxy
+			if command -v rc-update >/dev/null 2>&1; then
+				mkdir -p /etc/local.d
+				printf '#!/bin/sh\nsetsid /usr/local/sbin/bancada-bridge-proxy >/dev/null 2>&1 &\n' > /etc/local.d/bancada-bridge-proxy.start
+				chmod 755 /etc/local.d/bancada-bridge-proxy.start
+				rc-update add local default >/dev/null 2>&1
+			elif [ -d /run/systemd/system ]; then
+				printf '[Unit]\nAfter=docker.service\nWants=docker.service\n[Service]\nType=oneshot\nExecStart=/usr/local/sbin/bancada-bridge-proxy\n[Install]\nWantedBy=multi-user.target\n' \
+					> /etc/systemd/system/bancada-bridge-proxy.service
+				systemctl daemon-reload
+				systemctl enable bancada-bridge-proxy.service >/dev/null 2>&1
+			fi
+			setsid /usr/local/sbin/bancada-bridge-proxy >/dev/null 2>&1 &
+			echo "Rede isolada das máquinas: proxy do dispositivo na porta $proxy_port do gateway do Docker"
+		fi
+		;;
+esac
+
 if [ -n "${http_proxy:-}" ]; then
 	if command -v rc-service >/dev/null 2>&1; then
 		if ! grep -q HTTP_PROXY /etc/conf.d/docker 2>/dev/null; then

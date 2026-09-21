@@ -1,6 +1,9 @@
 export { machineKeys } from "./keys";
 export {
+  useBackupMachineMutation,
   useCreateMachineMutation,
+  useReinstallMachineMutation,
+  useRestoreMachineMutation,
   useDistributionsQuery,
   useDockerStatusQuery,
   useMachineActionMutation,

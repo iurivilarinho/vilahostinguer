@@ -143,6 +143,18 @@ public class Machine {
         this.autoStart = request.autoStart();
     }
 
+    /** New system for a reinstall; resources, network, folders and user name stay. */
+    public void switchSystem(MachineDistribution distribution, String version) {
+        this.distribution = distribution;
+        this.version = version;
+        this.image = distribution.imageFor(version);
+    }
+
+    /** Local image imported from a machine backup. */
+    public void useImage(String image) {
+        this.image = image;
+    }
+
     public void changeStatus(MachineStatus target) {
         MachineStatus.validateTransition(this.status, target);
         this.status = target;

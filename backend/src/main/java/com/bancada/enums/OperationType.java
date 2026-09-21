@@ -33,7 +33,16 @@ public enum OperationType {
     MACHINE_ACTION("Ação em máquina"),
 
     @Schema(description = "Remoção de máquina")
-    MACHINE_REMOVE("Remoção de máquina");
+    MACHINE_REMOVE("Remoção de máquina"),
+
+    @Schema(description = "Backup da máquina inteira (sistema, programas e arquivos)")
+    MACHINE_BACKUP("Backup de máquina"),
+
+    @Schema(description = "Volta a máquina ao estado de um backup")
+    MACHINE_RESTORE("Restauração de máquina"),
+
+    @Schema(description = "Reinstala a máquina do zero, na mesma ou em outra distribuição e versão")
+    MACHINE_REINSTALL("Reinstalação de máquina");
 
     private final String description;
 

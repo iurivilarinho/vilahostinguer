@@ -6,6 +6,9 @@ export type BackupStatus = "CREATING" | "AVAILABLE" | "FAILED" | "DISCARDED";
 export type BackupDto = {
   id: number;
   device: DeviceBasicDto;
+  machine: { id: number; name: string; networkMode: "BRIDGE" | "HOST"; status: string } | null;
+  kind: BackupKind;
+  kindDescription: string;
   operationId: number | null;
   name: string;
   paths: string[];
@@ -18,8 +21,12 @@ export type BackupDto = {
   updatedAt: string;
 };
 
+export type BackupKind = "FOLDERS" | "MACHINE";
+
 export type BackupFilter = {
   deviceId?: number;
+  machineId?: number;
+  kind?: BackupKind[];
   search?: string;
   status?: BackupStatus[];
 };

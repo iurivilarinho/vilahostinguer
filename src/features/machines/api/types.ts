@@ -77,6 +77,24 @@ export type MachineActionRequest = {
   action: MachineAction;
 };
 
+export type MachineBackupRequest = {
+  id: number;
+  name: string;
+};
+
+export type MachineRestoreRequest = {
+  id: number;
+  backupId: number;
+};
+
+export type MachineReinstallRequest = {
+  id: number;
+  distribution: MachineDistribution;
+  version: string;
+  password: string;
+  backupFirst: boolean;
+};
+
 export type MachineStatsDto = {
   machineId: number;
   cpuPercent: number | null;

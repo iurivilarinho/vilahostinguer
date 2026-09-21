@@ -21,6 +21,9 @@ const TYPE_OPTIONS: { value: OperationType; label: string }[] = [
   { value: "MACHINE_CREATE", label: "Criação de máquinas" },
   { value: "MACHINE_ACTION", label: "Ligar/desligar máquinas" },
   { value: "MACHINE_REMOVE", label: "Remoção de máquinas" },
+  { value: "MACHINE_BACKUP", label: "Backups de máquinas" },
+  { value: "MACHINE_RESTORE", label: "Restauração de máquinas" },
+  { value: "MACHINE_REINSTALL", label: "Reinstalação de máquinas" },
 ];
 
 export const PageOperations = () => {

@@ -2,6 +2,7 @@ package com.bancada.gateway;
 
 import com.bancada.enums.RouteType;
 import com.bancada.records.RouteTarget;
+import java.io.ByteArrayInputStream;
 import java.io.Closeable;
 import java.io.IOException;
 import java.io.InputStream;
@@ -12,6 +13,7 @@ import java.net.Socket;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Function;
+import javax.net.ssl.SSLSocket;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -106,7 +108,7 @@ public final class GatewayListener implements Closeable {
                         closeQuietly(client);
                         return;
                     }
-                    relay(client, target, new byte[0]);
+                    relay(client, target, new byte[0], false);
                 }
                 case HTTP -> {
                     HttpRequestHead head = HttpRequestHead.read(client.getInputStream());
@@ -121,7 +123,7 @@ public final class GatewayListener implements Closeable {
                                 : "Não há rota para " + head.host() + " neste servidor."));
                         return;
                     }
-                    relay(client, target, head.forwardedBytes(clientAddress(client)));
+                    relay(client, target, head.forwardedBytes(clientAddress(client), "http", target.singleRequest()), true);
                 }
                 case TLS -> {
                     TlsClientHello hello = TlsClientHello.read(client.getInputStream());
@@ -130,7 +132,11 @@ public final class GatewayListener implements Closeable {
                         closeQuietly(client);
                         return;
                     }
-                    relay(client, target, hello.bytes());
+                    if (target.tlsContext() != null) {
+                        terminate(client, target, hello);
+                    } else {
+                        relay(client, target, hello.bytes(), false);
+                    }
                 }
             }
         } catch (IOException exception) {
@@ -141,7 +147,25 @@ public final class GatewayListener implements Closeable {
         }
     }
 
-    private void relay(Socket client, RouteTarget target, byte[] firstBytes) throws IOException {
+    /**
+     * Ends TLS here with the certificate of the route (the ClientHello already read is handed back to
+     * the TLS engine), then relays plain HTTP marked as https to the destination.
+     */
+    private void terminate(Socket client, RouteTarget target, TlsClientHello hello) throws IOException {
+        SSLSocket secure = (SSLSocket) target.tlsContext().getSocketFactory()
+            .createSocket(client, new ByteArrayInputStream(hello.bytes()), true);
+        secure.setUseClientMode(false);
+        secure.setSoTimeout(FIRST_BYTES_TIMEOUT_MS);
+        secure.startHandshake();
+        HttpRequestHead head = HttpRequestHead.read(secure.getInputStream());
+        if (head == null) {
+            closeQuietly(secure);
+            return;
+        }
+        relay(secure, target, head.forwardedBytes(clientAddress(client), "https", target.singleRequest()), true);
+    }
+
+    private void relay(Socket client, RouteTarget target, byte[] firstBytes, boolean speaksHttp) throws IOException {
         TrafficCounter counter = traffic.apply(target.routeId());
         counter.opened();
         Socket upstream = new Socket();
@@ -151,7 +175,7 @@ public final class GatewayListener implements Closeable {
             counter.error("O destino " + target.host() + ":" + target.port() + " não respondeu (" + exception.getMessage() + ")");
             counter.closed();
             closeQuietly(upstream);
-            if (type == RouteType.HTTP) {
+            if (speaksHttp) {
                 answer(client, HttpRequestHead.page(502, "Bad Gateway", "O site não respondeu",
                     target.label() + " não aceitou a conexão. Veja se o serviço e o dispositivo estão ligados."));
             } else {
@@ -197,17 +221,26 @@ public final class GatewayListener implements Closeable {
                     counter.addOut(read);
                 }
             }
-            to.shutdownOutput();
+            halfClose(to);
         } catch (IOException exception) {
             closeQuietly(from);
             closeQuietly(to);
         }
     }
 
+    /** TLS sockets cannot half-close: the whole socket closes instead. */
+    private static void halfClose(Socket socket) {
+        try {
+            socket.shutdownOutput();
+        } catch (IOException | UnsupportedOperationException exception) {
+            closeQuietly(socket);
+        }
+    }
+
     private static void answer(Socket client, byte[] response) {
         try {
             client.getOutputStream().write(response);
-            client.shutdownOutput();
+            halfClose(client);
         } catch (IOException ignored) {
             // the visitor already left
         } finally {

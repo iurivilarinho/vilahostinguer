@@ -9,8 +9,8 @@ import java.util.Set;
 @Schema(description = "Situação de uma máquina")
 public enum MachineStatus {
 
-    @Schema(description = "Sendo criada (baixando a imagem e preparando o sistema)")
-    CREATING("Criando"),
+    @Schema(description = "Sendo criada, reinstalada ou restaurada (baixando a imagem e preparando o sistema)")
+    CREATING("Preparando"),
 
     @Schema(description = "Ligada")
     RUNNING("Ligada"),
@@ -29,9 +29,9 @@ public enum MachineStatus {
     static {
         EnumMap<MachineStatus, Set<MachineStatus>> map = new EnumMap<>(MachineStatus.class);
         map.put(CREATING, Set.of(RUNNING, STOPPED, FAILED));
-        map.put(RUNNING, Set.of(STOPPED, FAILED, REMOVED));
-        map.put(STOPPED, Set.of(RUNNING, FAILED, REMOVED));
-        map.put(FAILED, Set.of(RUNNING, STOPPED, REMOVED));
+        map.put(RUNNING, Set.of(STOPPED, FAILED, REMOVED, CREATING));
+        map.put(STOPPED, Set.of(RUNNING, FAILED, REMOVED, CREATING));
+        map.put(FAILED, Set.of(RUNNING, STOPPED, REMOVED, CREATING));
         map.put(REMOVED, Collections.emptySet());
         TRANSITIONS = Collections.unmodifiableMap(map);
     }

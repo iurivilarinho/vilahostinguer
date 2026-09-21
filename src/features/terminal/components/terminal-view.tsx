@@ -11,6 +11,8 @@ type TerminalViewProps = {
   deviceId?: number;
   /** Shell dentro de uma máquina (docker exec). Tem prioridade sobre o dispositivo. */
   machineId?: number;
+  /** Painel do cliente: shell no servidor contratado (a sessão vai no cookie, sem token do admin). */
+  serverId?: number;
   visible?: boolean;
   className?: string;
 };
@@ -19,8 +21,11 @@ type ConnectionState = "connecting" | "open" | "closed";
 
 const readToken = (name: string): string => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
 
-const socketUrl = (target: string, columns: number, rows: number): string => {
+const socketUrl = (target: string, portal: boolean, columns: number, rows: number): string => {
   const protocol = window.location.protocol === "https:" ? "wss" : "ws";
+  if (portal) {
+    return `${protocol}://${window.location.host}/ws/portal/terminal?${target}&cols=${columns}&rows=${rows}`;
+  }
   return tokenStorage.withToken(`${protocol}://${window.location.host}/ws/terminal?${target}&cols=${columns}&rows=${rows}`);
 };
 
@@ -28,8 +33,9 @@ const socketUrl = (target: string, columns: number, rows: number): string => {
  * Terminal de verdade (PTY via SSH) desenhado pelo xterm.js. As teclas vão como JSON e a saída
  * chega em bytes crus, que o próprio xterm decodifica.
  */
-export const TerminalView = ({ deviceId, machineId, visible = true, className }: TerminalViewProps) => {
-  const target = machineId !== undefined ? `machineId=${machineId}` : `deviceId=${deviceId ?? 0}`;
+export const TerminalView = ({ deviceId, machineId, serverId, visible = true, className }: TerminalViewProps) => {
+  const portal = serverId !== undefined;
+  const target = portal ? `serverId=${serverId}` : machineId !== undefined ? `machineId=${machineId}` : `deviceId=${deviceId ?? 0}`;
   const containerRef = useRef<HTMLDivElement>(null);
   const fitRef = useRef<FitAddon | null>(null);
   const [state, setState] = useState<ConnectionState>("connecting");
@@ -59,7 +65,7 @@ export const TerminalView = ({ deviceId, machineId, visible = true, className }:
     fit.fit();
 
     setState("connecting");
-    const socket = new WebSocket(socketUrl(target, terminal.cols, terminal.rows));
+    const socket = new WebSocket(socketUrl(target, portal, terminal.cols, terminal.rows));
     socket.binaryType = "arraybuffer";
     socket.onopen = () => {
       setState("open");
@@ -98,7 +104,7 @@ export const TerminalView = ({ deviceId, machineId, visible = true, className }:
       terminal.dispose();
       fitRef.current = null;
     };
-  }, [target, attempt]);
+  }, [target, portal, attempt]);
 
   useEffect(() => {
     if (visible) {

@@ -24,6 +24,13 @@ export default defineConfig({
     outDir: "backend/src/main/resources/static",
     emptyOutDir: true,
     chunkSizeWarningLimit: 1500,
+    // duas páginas: o painel administrativo (index.html) e o painel do cliente (portal.html)
+    rollupOptions: {
+      input: {
+        main: path.resolve(__dirname, "index.html"),
+        portal: path.resolve(__dirname, "portal.html"),
+      },
+    },
   },
   test: {
     environment: "jsdom",

@@ -81,3 +81,16 @@ export const percent = (used: number | null | undefined, total: number | null | 
   }
   return (used / total) * 100;
 };
+
+const currencyFormatter = new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" });
+
+export const formatCurrency = (value: number | null | undefined): string => (value === null || value === undefined ? "—" : currencyFormatter.format(value));
+
+/** Data sem hora vinda da API ("2026-10-21"), mostrada como 21/10/2026 sem conversão de fuso. */
+export const formatDate = (value: string | null | undefined): string => {
+  if (!value) {
+    return "—";
+  }
+  const [year, month, day] = value.slice(0, 10).split("-");
+  return `${day}/${month}/${year}`;
+};
