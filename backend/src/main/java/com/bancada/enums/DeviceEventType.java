@@ -18,5 +18,8 @@ public enum DeviceEventType {
     UPDATED,
 
     @Schema(description = "Uma operação terminou")
-    OPERATION_FINISHED
+    OPERATION_FINISHED,
+
+    @Schema(description = "Domínios, rotas ou o gateway de acesso remoto mudaram")
+    NETWORK_UPDATED
 }

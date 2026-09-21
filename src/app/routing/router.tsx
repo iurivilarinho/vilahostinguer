@@ -19,6 +19,7 @@ import {
 } from "@/features/devices";
 import { PageMachines } from "@/features/machines";
 import { PageOperations } from "@/features/operations";
+import { PageRemoteAccess } from "@/features/remote-access";
 import { PageDesignSystem } from "@/features/public/design-system";
 import { PageSettings } from "@/features/settings";
 import { PageTerminal } from "@/features/terminal";
@@ -42,6 +43,7 @@ export const AppRouter = () => (
       </Route>
       <Route path={Rotas.terminal} element={<PageTerminal />} />
       <Route path={Rotas.machines} element={<PageMachines />} />
+      <Route path={Rotas.remoteAccess} element={<PageRemoteAccess />} />
       <Route path={Rotas.backups} element={<PageBackups />} />
       <Route path={Rotas.operations} element={<PageOperations />} />
       <Route path={Rotas.credentials} element={<PageCredentials />} />

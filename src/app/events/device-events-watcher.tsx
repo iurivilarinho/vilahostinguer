@@ -8,6 +8,7 @@ import { dashboardKeys } from "@/features/dashboard/api";
 import { deviceKeys, type DeviceEventDto } from "@/features/devices/api";
 import { machineKeys } from "@/features/machines/api";
 import { operationKeys } from "@/features/operations/api";
+import { remoteAccessKeys } from "@/features/remote-access/api";
 import { storageKeys } from "@/features/storage/api";
 
 const EVENTS_URL = "/api/events";
@@ -48,6 +49,9 @@ export const DeviceEventsWatcher = () => {
           } else {
             notify.success(event.message, event.deviceName ?? undefined);
           }
+          break;
+        case "NETWORK_UPDATED":
+          queryClient.invalidateQueries({ queryKey: remoteAccessKeys.all });
           break;
         case "UPDATED":
           break;

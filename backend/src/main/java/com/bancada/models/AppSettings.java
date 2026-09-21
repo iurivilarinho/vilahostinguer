@@ -1,5 +1,6 @@
 package com.bancada.models;
 
+import com.bancada.request.GatewaySettingsRequest;
 import com.bancada.request.SettingsRequest;
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.persistence.Column;
@@ -44,6 +45,22 @@ public class AppSettings {
     @Schema(description = "Pasta onde os backups são salvos")
     private String backupDirectory;
 
+    @Column(name = "gateway_enabled", nullable = false, columnDefinition = "boolean default true")
+    @Schema(description = "Gateway de acesso remoto ligado")
+    private boolean gatewayEnabled = true;
+
+    @Column(name = "gateway_http_port", nullable = false, columnDefinition = "integer default 80")
+    @Schema(description = "Porta compartilhada dos sites HTTP")
+    private int gatewayHttpPort = 80;
+
+    @Column(name = "gateway_tls_port", nullable = false, columnDefinition = "integer default 443")
+    @Schema(description = "Porta compartilhada dos sites HTTPS")
+    private int gatewayTlsPort = 443;
+
+    @Column(name = "upnp_enabled", nullable = false, columnDefinition = "boolean default false")
+    @Schema(description = "Abrir as portas do gateway no roteador por UPnP")
+    private boolean upnpEnabled;
+
     @Column(name = "created_at", updatable = false, nullable = false)
     @Schema(description = "Data de criação")
     private LocalDateTime createdAt;
@@ -65,6 +82,13 @@ public class AppSettings {
         this.extraHosts = String.join(",", request.extraHosts());
         this.autoSetup = request.autoSetup();
         this.backupDirectory = request.backupDirectory().trim();
+    }
+
+    public void updateGateway(GatewaySettingsRequest request) {
+        this.gatewayEnabled = request.enabled();
+        this.gatewayHttpPort = request.httpPort();
+        this.gatewayTlsPort = request.tlsPort();
+        this.upnpEnabled = request.upnpEnabled();
     }
 
     public List<String> extraHostList() {
@@ -107,6 +131,22 @@ public class AppSettings {
 
     public String getBackupDirectory() {
         return backupDirectory;
+    }
+
+    public boolean isGatewayEnabled() {
+        return gatewayEnabled;
+    }
+
+    public int getGatewayHttpPort() {
+        return gatewayHttpPort;
+    }
+
+    public int getGatewayTlsPort() {
+        return gatewayTlsPort;
+    }
+
+    public boolean isUpnpEnabled() {
+        return upnpEnabled;
     }
 
     public LocalDateTime getCreatedAt() {

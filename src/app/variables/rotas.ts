@@ -18,6 +18,7 @@ export const Rotas = {
   },
   terminal: "/terminal",
   machines: "/maquinas",
+  remoteAccess: "/acesso-remoto",
   backups: "/backups",
   operations: "/atividades",
   credentials: "/credenciais",

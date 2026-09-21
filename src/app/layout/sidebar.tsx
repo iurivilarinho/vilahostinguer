@@ -1,4 +1,4 @@
-import { Activity, Archive, Boxes, KeyRound, LayoutDashboard, Palette, Server, Settings, SquareTerminal } from "lucide-react";
+import { Activity, Archive, Boxes, Globe, KeyRound, LayoutDashboard, Palette, Server, Settings, SquareTerminal } from "lucide-react";
 import type { ReactNode } from "react";
 import { NavLink } from "react-router-dom";
 import { Typography } from "@/components";
@@ -17,6 +17,7 @@ const MAIN_ITEMS: NavItem[] = [
   { to: Rotas.dashboard, label: "Início", icon: <LayoutDashboard />, end: true },
   { to: Rotas.devices.list, label: "Dispositivos", icon: <Server /> },
   { to: Rotas.machines, label: "Máquinas", icon: <Boxes /> },
+  { to: Rotas.remoteAccess, label: "Acesso remoto", icon: <Globe /> },
   { to: Rotas.terminal, label: "Terminal", icon: <SquareTerminal /> },
   { to: Rotas.backups, label: "Backups", icon: <Archive /> },
   { to: Rotas.operations, label: "Atividades", icon: <Activity /> },

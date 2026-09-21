@@ -113,6 +113,8 @@ class MachineServiceTest {
         assertTrue(script.contains("--restart unless-stopped"));
         assertTrue(script.contains("-v '/srv/sites:/var/www'"));
         assertTrue(script.contains("Port 2201"));
+        assertTrue(script.contains("chown iuri: "), "an empty shared folder goes to the machine user");
+        assertTrue(script.contains("docker info 2>&1 | grep -q 'No cpu cfs quota'"));
         assertFalse(script.contains(" -p 8080:80/tcp"), "port mappings make no sense on the host network");
     }
 
@@ -122,6 +124,17 @@ class MachineServiceTest {
 
         assertTrue(script.contains("printf '%s:%s\\n' 'iuri' 'it'\\''s $HOME' | docker exec -i 'bancada-web-teste' chpasswd"));
         assertTrue(script.contains(" -p 8080:80/tcp"));
+    }
+
+    @Test
+    void operationThatDoesNotStartReleasesTheName() {
+        MachineRequest request = request(MachineDistribution.ALPINE, "3.22", MachineNetworkMode.HOST, 2201, "segredo");
+        Machine stored = new Machine(request, phone);
+        when(machineRepository.findById(any())).thenReturn(Optional.of(stored));
+        when(operationService.start(any(), any(), anyString(), anyString(), any())).thenThrow(new IllegalStateException("banco recusou"));
+
+        assertThrows(IllegalStateException.class, () -> machineService.create(request));
+        assertEquals(MachineStatus.REMOVED, stored.getStatus());
     }
 
     @Test

@@ -108,7 +108,7 @@ export type ScanStatusDto = {
   reachableHosts: string[];
 };
 
-export type DeviceEventType = "DISCOVERED" | "ONLINE" | "OFFLINE" | "UPDATED" | "OPERATION_FINISHED";
+export type DeviceEventType = "DISCOVERED" | "ONLINE" | "OFFLINE" | "UPDATED" | "OPERATION_FINISHED" | "NETWORK_UPDATED";
 
 export type DeviceEventDto = {
   type: DeviceEventType;

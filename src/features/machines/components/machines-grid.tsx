@@ -2,9 +2,16 @@ import { Box } from "lucide-react";
 import { useState, type ReactNode } from "react";
 import { Card, ConfirmDialog, EmptyState, Skeleton } from "@/components";
 import { openOperationViewer } from "@/features/operations";
+import { RouteSheet, type RouteSheetPreset } from "@/features/remote-access";
 import { useMachineActionMutation, useMachineStatsQuery, useRemoveMachineMutation, type MachineAction, type MachineDto } from "../api";
 import { MachineCard } from "./machine-card";
 import { MachineLogsDialog, MachineTerminalDialog } from "./machine-dialogs";
+
+/** Com SSH, a sugestão é publicar o SSH numa porta do PC; sem SSH, um site na porta 80. */
+const publishPreset = (machine: MachineDto): RouteSheetPreset =>
+  machine.sshEnabled && machine.sshPort !== null
+    ? { type: "TCP", target: `machine:${machine.id}`, targetPort: String(machine.sshPort), publicPort: String(machine.sshPort), description: `SSH da ${machine.name}` }
+    : { type: "HTTP", target: `machine:${machine.id}`, targetPort: "80" };
 
 type MachinesGridProps = {
   machines: MachineDto[];
@@ -20,6 +27,7 @@ export const MachinesGrid = ({ machines, isLoading, deviceId, deviceHost, showDe
   const [terminal, setTerminal] = useState<MachineDto | null>(null);
   const [logs, setLogs] = useState<MachineDto | null>(null);
   const [removing, setRemoving] = useState<MachineDto | null>(null);
+  const [publishing, setPublishing] = useState<RouteSheetPreset | undefined>();
   const anyRunning = machines.some((machine) => machine.status === "RUNNING");
   const { data: stats } = useMachineStatsQuery(deviceId, { enabled: anyRunning });
   const onStarted = { onSuccess: (operation: { id: number }) => openOperationViewer(operation.id) };
@@ -62,11 +70,13 @@ export const MachinesGrid = ({ machines, isLoading, deviceId, deviceHost, showDe
             onLogs={setLogs}
             onAction={(target, action: MachineAction) => runAction({ id: target.id, action })}
             onRemove={setRemoving}
+            onPublish={(target) => setPublishing(publishPreset(target))}
           />
         ))}
       </div>
       <MachineTerminalDialog machine={terminal} onClose={() => setTerminal(null)} />
       <MachineLogsDialog machine={logs} onClose={() => setLogs(null)} />
+      <RouteSheet open={publishing !== undefined} onOpenChange={(open) => !open && setPublishing(undefined)} preset={publishing} />
       <ConfirmDialog
         open={removing !== null}
         onOpenChange={(open) => !open && setRemoving(null)}

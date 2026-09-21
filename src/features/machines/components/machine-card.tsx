@@ -1,4 +1,4 @@
-import { Box, FileText, MoreHorizontal, Play, Power, RotateCw, SquareTerminal, Trash2 } from "lucide-react";
+import { Box, FileText, Globe, MoreHorizontal, Play, Power, RotateCw, SquareTerminal, Trash2 } from "lucide-react";
 import { Badge, Button, Card, DropdownMenu, Progress, Typography } from "@/components";
 import { cn } from "@/lib/merge-classes";
 import type { MachineDto, MachineStatsDto, MachineStatus } from "../api";
@@ -20,9 +20,10 @@ type MachineCardProps = {
   onLogs: (machine: MachineDto) => void;
   onAction: (machine: MachineDto, action: "START" | "STOP" | "RESTART") => void;
   onRemove: (machine: MachineDto) => void;
+  onPublish: (machine: MachineDto) => void;
 };
 
-export const MachineCard = ({ machine, stats, deviceHost, showDevice = false, onTerminal, onLogs, onAction, onRemove }: MachineCardProps) => {
+export const MachineCard = ({ machine, stats, deviceHost, showDevice = false, onTerminal, onLogs, onAction, onRemove, onPublish }: MachineCardProps) => {
   const running = machine.status === "RUNNING";
   const busy = machine.status === "CREATING";
   const sshCommand = machine.sshEnabled
@@ -112,6 +113,7 @@ export const MachineCard = ({ machine, stats, deviceHost, showDevice = false, on
           items={[
             { label: "Reiniciar", icon: <RotateCw />, disabled: !running, onSelect: () => onAction(machine, "RESTART") },
             { label: "Ver saída", icon: <FileText />, disabled: busy, onSelect: () => onLogs(machine) },
+            { label: "Publicar na internet", icon: <Globe />, disabled: busy, onSelect: () => onPublish(machine) },
             { label: "Remover", icon: <Trash2 />, destructive: true, disabled: busy, onSelect: () => onRemove(machine) },
           ]}
         />

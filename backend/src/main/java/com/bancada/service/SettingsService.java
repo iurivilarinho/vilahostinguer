@@ -2,6 +2,7 @@ package com.bancada.service;
 
 import com.bancada.models.AppSettings;
 import com.bancada.repository.AppSettingsRepository;
+import com.bancada.request.GatewaySettingsRequest;
 import com.bancada.request.SettingsRequest;
 import java.nio.file.Paths;
 import org.springframework.beans.factory.annotation.Value;
@@ -23,6 +24,13 @@ public class SettingsService {
     public AppSettings get() {
         return appSettingsRepository.findById(AppSettings.SINGLETON_ID)
             .orElseGet(() -> appSettingsRepository.save(new AppSettings(defaultBackupDirectory)));
+    }
+
+    @Transactional
+    public AppSettings updateGateway(GatewaySettingsRequest request) {
+        AppSettings settings = get();
+        settings.updateGateway(request);
+        return appSettingsRepository.save(settings);
     }
 
     @Transactional

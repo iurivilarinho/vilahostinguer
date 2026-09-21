@@ -139,7 +139,19 @@ public class MachineService {
         Machine machine = machineRepository.save(new Machine(request, device));
         Long machineId = machine.getId();
         String script = creationScript(machine, request.password());
-        Operation operation = operationService.start(device, OperationType.MACHINE_CREATE, "Criar máquina " + machine.getName(),
+        Operation operation;
+        try {
+            operation = startCreation(device, machine, machineId, script);
+        } catch (RuntimeException e) {
+            // nothing reached the device: the record must not keep the name taken
+            forceStatus(machineId, MachineStatus.REMOVED);
+            throw e;
+        }
+        return new MachineCreationResponse(new MachineResponse(machine), operation.getId());
+    }
+
+    private Operation startCreation(Device device, Machine machine, Long machineId, String script) {
+        return operationService.start(device, OperationType.MACHINE_CREATE, "Criar máquina " + machine.getName(),
             machine.getContainerName(),
             operationId -> {
                 int exitCode = 1;
@@ -152,7 +164,6 @@ public class MachineService {
                     updateStatus(machineId, exitCode == 0 ? MachineStatus.RUNNING : MachineStatus.FAILED);
                 }
             });
-        return new MachineCreationResponse(new MachineResponse(machine), operation.getId());
     }
 
     public Operation runAction(Long id, MachineAction action) {
@@ -271,7 +282,7 @@ public class MachineService {
             .append(" --label ").append(LABEL).append('=').append(machine.getId())
             .append(" --restart ").append(machine.isAutoStart() ? "unless-stopped" : "no");
         if (machine.getCpuLimit() != null) {
-            run.append(" --cpus ").append(String.format(Locale.ROOT, "%.2f", machine.getCpuLimit()));
+            run.append(" $cpu_limit");
         }
         if (machine.getMemoryLimitMb() != null) {
             run.append(" --memory ").append(machine.getMemoryLimitMb()).append('m');
@@ -291,6 +302,16 @@ public class MachineService {
         StringBuilder script = new StringBuilder()
             .append("command -v docker >/dev/null 2>&1 || { echo 'O Docker não está instalado neste dispositivo.'; exit 127; }\n")
             .append("docker info >/dev/null 2>&1 || { echo 'O Docker não está respondendo. Veja a aba Aplicativos.'; exit 1; }\n");
+        if (machine.getCpuLimit() != null) {
+            // kernels without CFS quota (Android 3.x) reject --cpus; a proportional weight is the closest
+            int shares = (int) Math.max(2, Math.round(machine.getCpuLimit() * 1024));
+            script.append("cpu_limit=")
+                .append(SshService.quote("--cpus " + String.format(Locale.ROOT, "%.2f", machine.getCpuLimit()))).append('\n')
+                .append("if docker info 2>&1 | grep -q 'No cpu cfs quota'; then\n")
+                .append("  echo 'Aviso: o kernel não limita CPU por cota; a máquina recebe peso proporcional (--cpu-shares).'\n")
+                .append("  cpu_limit='--cpu-shares ").append(shares).append("'\n")
+                .append("fi\n");
+        }
         for (MachineVolume volume : machine.getVolumes()) {
             script.append("mkdir -p ").append(SshService.quote(volume.getHostPath())).append('\n');
         }
@@ -316,6 +337,12 @@ public class MachineService {
             .append("docker exec ").append(name).append(" sh -c ")
             .append(SshService.quote("mkdir -p /etc/sudoers.d && echo '" + user + " ALL=(ALL) ALL' > /etc/sudoers.d/" + user
                 + " && chmod 440 /etc/sudoers.d/" + user)).append(" || exit $?\n");
+        // a shared folder that is still empty was just created by this script: hand it to the user
+        for (MachineVolume volume : machine.getVolumes()) {
+            String path = SshService.quote(volume.getContainerPath());
+            script.append("docker exec ").append(name).append(" sh -c ")
+                .append(SshService.quote("[ -z \"$(ls -A " + path + ")\" ] && chown " + user + ": " + path + "; true")).append('\n');
+        }
         if (machine.isSshEnabled()) {
             String port = String.valueOf(machine.getSshPort());
             script.append("echo '== Ligando o SSH na porta ").append(port).append(" =='\n")
