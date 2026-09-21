@@ -1,0 +1,189 @@
+@import "tailwindcss";
+@import "@fontsource/dm-sans/400.css";
+@import "@fontsource/dm-sans/500.css";
+@import "@fontsource/dm-sans/600.css";
+@import "@fontsource/dm-sans/700.css";
+@import "@xterm/xterm/css/xterm.css";
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+/*
+ * Linguagem visual inspirada no painel de hospedagem da Hostinger: roxo como cor de ação,
+ * fundo lavanda claro, cartões brancos com borda fina, menu lateral branco com item ativo
+ * destacado em roxo suave. Todas as cores passam por estes tokens; nada de hex nas telas.
+ */
+:root {
+  --background: #f4f5ff;
+  --foreground: #1d1e20;
+  --card: #ffffff;
+  --card-foreground: #1d1e20;
+  --popover: #ffffff;
+  --popover-foreground: #1d1e20;
+  --muted: #f2f3f6;
+  --muted-foreground: #6d7081;
+  --primary: #673de6;
+  --primary-hover: #5025d1;
+  --primary-foreground: #ffffff;
+  --primary-soft: #ebe4ff;
+  --primary-soft-foreground: #5025d1;
+  --heading: #2f1c6a;
+  --border: #dadce0;
+  --input: #dadce0;
+  --ring: #8c85ff;
+  --success: #00b090;
+  --success-soft: #def4f0;
+  --success-foreground: #00785f;
+  --warning: #ffcd35;
+  --warning-soft: #fff8e2;
+  --warning-foreground: #8a5f00;
+  --destructive: #fc5185;
+  --destructive-hover: #e03e70;
+  --destructive-soft: #ffe8ef;
+  --destructive-foreground: #c0254f;
+  --info: #357df9;
+  --info-soft: #e3edff;
+  --info-foreground: #1f5fcf;
+  --sidebar: #ffffff;
+  --sidebar-foreground: #36344d;
+  --sidebar-border: #e3e3f0;
+  --terminal: #1d1e20;
+  --terminal-foreground: #e8e8ee;
+  --chart-1: #673de6;
+  --chart-2: #00b090;
+  --chart-3: #357df9;
+  --overlay: rgb(29 30 32 / 0.45);
+  --shadow-card: 0 1px 2px rgb(29 30 32 / 0.04), 0 1px 3px rgb(29 30 32 / 0.06);
+}
+
+.dark {
+  --background: #131316;
+  --foreground: #f1f1f6;
+  --card: #1d1d22;
+  --card-foreground: #f1f1f6;
+  --popover: #232329;
+  --popover-foreground: #f1f1f6;
+  --muted: #26262d;
+  --muted-foreground: #a3a4b3;
+  --primary: #8c6cff;
+  --primary-hover: #a38aff;
+  --primary-foreground: #ffffff;
+  --primary-soft: #2c2452;
+  --primary-soft-foreground: #c9bcff;
+  --heading: #ffffff;
+  --border: #33333c;
+  --input: #3a3a44;
+  --ring: #8c6cff;
+  --success: #1fc9a4;
+  --success-soft: #11322b;
+  --success-foreground: #5fe0c2;
+  --warning: #ffcd35;
+  --warning-soft: #3a3016;
+  --warning-foreground: #ffd966;
+  --destructive: #ff5c8f;
+  --destructive-hover: #ff7aa4;
+  --destructive-soft: #3d1a26;
+  --destructive-foreground: #ff8fb1;
+  --info: #5b95ff;
+  --info-soft: #172846;
+  --info-foreground: #8db5ff;
+  --sidebar: #19191e;
+  --sidebar-foreground: #c9c9d6;
+  --sidebar-border: #2a2a31;
+  --terminal: #0e0e11;
+  --terminal-foreground: #e8e8ee;
+  --chart-1: #8c6cff;
+  --chart-2: #1fc9a4;
+  --chart-3: #5b95ff;
+  --overlay: rgb(0 0 0 / 0.6);
+  --shadow-card: 0 1px 2px rgb(0 0 0 / 0.3);
+}
+
+@theme inline {
+  --font-sans: "DM Sans", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "Cascadia Mono", "Consolas", ui-monospace, monospace;
+
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-primary: var(--primary);
+  --color-primary-hover: var(--primary-hover);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary-soft: var(--primary-soft);
+  --color-primary-soft-foreground: var(--primary-soft-foreground);
+  --color-heading: var(--heading);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-success: var(--success);
+  --color-success-soft: var(--success-soft);
+  --color-success-foreground: var(--success-foreground);
+  --color-warning: var(--warning);
+  --color-warning-soft: var(--warning-soft);
+  --color-warning-foreground: var(--warning-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-hover: var(--destructive-hover);
+  --color-destructive-soft: var(--destructive-soft);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-info: var(--info);
+  --color-info-soft: var(--info-soft);
+  --color-info-foreground: var(--info-foreground);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-terminal: var(--terminal);
+  --color-terminal-foreground: var(--terminal-foreground);
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-overlay: var(--overlay);
+  --shadow-card: var(--shadow-card);
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  html,
+  body,
+  #root {
+    @apply h-full;
+  }
+
+  body {
+    @apply bg-background font-sans text-foreground antialiased;
+  }
+
+  :focus-visible {
+    @apply outline-2 outline-offset-2 outline-ring;
+  }
+}
+
+/* Escala tipográfica usada pelo componente Typography (uma classe por variante). */
+@layer components {
+  .display-xl { @apply text-[64px] leading-[1.05] font-semibold tracking-tight text-heading; }
+  .display-lg { @apply text-5xl leading-tight font-semibold tracking-tight text-heading; }
+  .display-md { @apply text-4xl leading-tight font-semibold tracking-tight text-heading; }
+  .display-sm { @apply text-[28px] leading-snug font-semibold tracking-tight text-heading; }
+  .title-lg { @apply text-[22px] leading-snug font-semibold text-heading; }
+  .title-md { @apply text-lg leading-snug font-semibold text-heading; }
+  .title-sm { @apply text-base leading-snug font-semibold text-foreground; }
+  .body-md { @apply text-base leading-relaxed text-foreground; }
+  .body-sm { @apply text-sm leading-normal text-foreground; }
+  .caption { @apply text-[13px] leading-normal font-medium text-muted-foreground; }
+  .button { @apply text-sm font-semibold; }
+  .nav-link { @apply text-sm font-medium; }
+  .hero-title { @apply text-[64px] leading-[1.05] font-semibold tracking-tight text-heading; }
+  .hero-description { @apply text-lg leading-relaxed text-muted-foreground; }
+  .section-label { @apply text-xs font-semibold tracking-wider text-muted-foreground uppercase; }
+  .section-heading { @apply text-5xl leading-tight font-semibold tracking-tight text-heading; }
+  .section-intro { @apply text-base leading-relaxed text-muted-foreground; }
+  .ui-header { @apply text-[13px] font-semibold text-foreground; }
+  .inline-link { @apply font-medium text-primary underline underline-offset-2 hover:text-primary-hover; }
+  .mono { @apply font-mono text-[13px] text-foreground; }
+}

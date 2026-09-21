@@ -1,0 +1,4 @@
+interface:
+  display_name: "Spring Filter Spec"
+  short_description: "Specifications dinamicas para busca"
+  default_prompt: "Use $spring-filters-specification para implementar filtros opcionais com Specification neste backend."

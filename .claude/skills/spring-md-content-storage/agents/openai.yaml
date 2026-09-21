@@ -1,0 +1,4 @@
+interface:
+  display_name: "Spring MD Content Storage"
+  short_description: "Padrao para salvar conteudo Markdown"
+  default_prompt: "Use $spring-md-content-storage para salvar conteudo Markdown ou texto longo com @Lob String."

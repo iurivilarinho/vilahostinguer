@@ -1,0 +1,4 @@
+interface:
+  display_name: "Spring Document Storage"
+  short_description: "Padrao para arquivos binarios por banco"
+  default_prompt: "Use $spring-document-storage para criar armazenamento binario com padrao para PostgreSQL ou outros bancos."

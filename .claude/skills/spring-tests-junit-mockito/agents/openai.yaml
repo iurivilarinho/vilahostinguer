@@ -1,0 +1,4 @@
+interface:
+  display_name: "Spring Tests JUnit Mockito"
+  short_description: "Testes Spring com JUnit e Mockito"
+  default_prompt: "Use $spring-tests-junit-mockito para criar ou ajustar testes unitarios e de camada de servico com JUnit e Mockito neste backend Spring."

@@ -1,0 +1,19 @@
+node_modules/
+dist/
+storybook-static/
+*.log
+
+# gerados no build
+backend/target/
+backend/src/main/resources/static/
+src-tauri/target/
+src-tauri/resources/
+src-tauri/gen/
+
+.env
+.env.*
+!.env.example
+
+# skills com dados internos da empresa (servidores, senha) ficam só na máquina
+.claude/skills/spring-db-credentials/
+.claude/skills/shared/api/openapi.json

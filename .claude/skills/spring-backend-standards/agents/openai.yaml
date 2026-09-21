@@ -1,0 +1,4 @@
+interface:
+  display_name: "Spring Backend Standards"
+  short_description: "Padroes compartilhados para backend Spring"
+  default_prompt: "Use $spring-backend-standards para seguir os padrões globais deste backend Spring."

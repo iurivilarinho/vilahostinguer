@@ -1,0 +1,4 @@
+interface:
+  display_name: "Spring Security JWT"
+  short_description: "JWT stateless com cookie e bearer"
+  default_prompt: "Use $spring-security-jwt para implementar autenticação JWT no padrão deste backend."

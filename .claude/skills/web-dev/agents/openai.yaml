@@ -1,0 +1,3 @@
+interface:
+  display_name: 'Web Dev'
+  short_description: 'Build web application code following the project architecture and conventions. Use for implementing React components, hooks, utilities, p...'

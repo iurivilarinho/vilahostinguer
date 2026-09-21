@@ -1,0 +1,4 @@
+interface:
+  display_name: "Spring Error Logging"
+  short_description: "Padronizacao de erros e log HTTP"
+  default_prompt: "Use $spring-error-logging para padronizar erros e logging HTTP neste backend."

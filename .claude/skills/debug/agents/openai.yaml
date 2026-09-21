@@ -1,0 +1,3 @@
+interface:
+  display_name: 'Debug'
+  short_description: 'Investigate bugs, identify root causes, propose the safest fix, and implement changes when needed to ensure the issue is actually resolve...'

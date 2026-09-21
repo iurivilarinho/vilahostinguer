@@ -1,0 +1,25 @@
+[package]
+name = "bancada"
+version = "0.1.0"
+description = "Bancada - painel para servidores caseiros"
+edition = "2021"
+rust-version = "1.77"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = ["tray-icon"] }
+# Abrir o app de novo traz a janela existente (da bandeja) em vez de subir outro backend.
+tauri-plugin-single-instance = "2"
+# Inicia junto com o Windows: a detecção de dispositivos precisa estar rodando quando o cabo é ligado.
+tauri-plugin-autostart = "2"
+tauri-plugin-notification = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+uuid = { version = "1", features = ["v4"] }
+
+[profile.release]
+opt-level = "s"
+lto = true
+strip = true

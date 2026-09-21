@@ -1,0 +1,4 @@
+interface:
+  display_name: "Spring Status Enums"
+  short_description: "Enums de status com transicoes"
+  default_prompt: "Use $spring-status-enums para criar enums de status com regras de transição."

@@ -1,0 +1,4 @@
+interface:
+  display_name: "Spring Excel Report"
+  short_description: "Relatorios Excel com Apache POI"
+  default_prompt: "Use $spring-report-excel para gerar ou alterar relatórios Excel no padrão deste backend."

@@ -1,0 +1,4 @@
+interface:
+  display_name: "Spring CRUD Module"
+  short_description: "Padrao CRUD Spring do projeto"
+  default_prompt: "Use $spring-crud-module para criar um modulo seguindo os padrões deste backend."

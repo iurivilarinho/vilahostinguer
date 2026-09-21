@@ -1,0 +1,4 @@
+interface:
+  display_name: "Spring Audit Log"
+  short_description: "Log de movimentacao por usuario (quem, quando, o que mudou)"
+  default_prompt: "Use $spring-audit-log para registrar quem movimentou a entidade, quando, e o que mudou neste backend."
