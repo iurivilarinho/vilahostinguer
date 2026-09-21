@@ -1,40 +1,26 @@
 import type { DeviceBasicDto } from "@/features/devices/api";
+import type { HostDiskDto } from "@/features/volumes/api";
 import type { ApiRequestParams } from "@/lib/api/types";
 
-export type MachineDistribution = "UBUNTU" | "DEBIAN" | "ALPINE" | "FEDORA" | "ROCKY" | "ARCH";
+export type MachineDistribution = "UBUNTU" | "DEBIAN" | "ROCKY" | "ALMA";
 export type MachineStatus = "CREATING" | "RUNNING" | "STOPPED" | "FAILED" | "REMOVED";
-export type MachineNetworkMode = "BRIDGE" | "HOST";
 export type MachineAction = "START" | "STOP" | "RESTART";
 
-export type MachinePortDto = {
-  hostPort: number;
-  containerPort: number;
-  protocol: string;
-};
-
-export type MachineVolumeDto = {
-  hostPath: string;
-  containerPath: string;
-};
-
+/** Máquina virtual Linux deste PC (Hyper-V); o `device` é ela vista como dispositivo do painel. */
 export type MachineDto = {
   id: number;
-  device: DeviceBasicDto;
+  device: DeviceBasicDto | null;
   name: string;
-  containerName: string;
+  vmName: string;
   distribution: MachineDistribution;
   distributionName: string;
   version: string;
-  image: string;
-  cpuLimit: number | null;
-  memoryLimitMb: number | null;
-  networkMode: MachineNetworkMode;
-  networkModeDescription: string;
-  ports: MachinePortDto[];
-  volumes: MachineVolumeDto[];
+  cpuCount: number;
+  memoryMb: number;
+  diskGb: number;
+  drive: string;
+  ipAddress: string;
   username: string;
-  sshEnabled: boolean;
-  sshPort: number | null;
   autoStart: boolean;
   status: MachineStatus;
   statusDescription: string;
@@ -43,7 +29,6 @@ export type MachineDto = {
 };
 
 export type MachineFilter = {
-  deviceId?: number;
   search?: string;
   status?: MachineStatus[];
 };
@@ -51,19 +36,15 @@ export type MachineFilter = {
 export type GetMachinesParams = ApiRequestParams<MachineDto, MachineFilter>;
 
 export type MachineRequest = {
-  deviceId: number;
   name: string;
   distribution: MachineDistribution;
   version: string;
-  cpuLimit: number | null;
-  memoryLimitMb: number | null;
-  networkMode: MachineNetworkMode;
-  ports: MachinePortDto[];
-  volumes: MachineVolumeDto[];
+  cpuCount: number;
+  memoryMb: number;
+  diskGb: number;
+  drive?: string;
   username: string;
   password: string;
-  installSsh: boolean;
-  sshPort: number | null;
   autoStart: boolean;
 };
 
@@ -98,17 +79,9 @@ export type MachineReinstallRequest = {
 export type MachineStatsDto = {
   machineId: number;
   cpuPercent: number | null;
-  memoryUsage: string;
+  memoryUsage: string | null;
   memoryPercent: number | null;
   processCount: number | null;
-};
-
-export type DockerStatusDto = {
-  installed: boolean;
-  running: boolean;
-  version: string | null;
-  missingKernelFeatures: string[];
-  message: string | null;
 };
 
 export type DistributionDto = {
@@ -121,4 +94,22 @@ export type DistributionDto = {
 export type MachineLogsDto = {
   machineId: number;
   log: string;
+};
+
+/** Este PC como anfitrião das máquinas. */
+export type MachineHostDto = {
+  hyperVInstalled: boolean;
+  hyperVPermitted: boolean;
+  networkReady: boolean;
+  ready: boolean;
+  message: string | null;
+  switchName: string;
+  network: string;
+  cpus: number;
+  memoryMb: number;
+  reservedMemoryMb: number;
+  usedMemoryMb: number;
+  availableMemoryMb: number;
+  machineCount: number;
+  disks: HostDiskDto[];
 };

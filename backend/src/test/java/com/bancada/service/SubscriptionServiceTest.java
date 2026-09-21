@@ -16,7 +16,6 @@ import com.bancada.enums.BillingCycle;
 import com.bancada.enums.ConnectionType;
 import com.bancada.enums.MachineAction;
 import com.bancada.enums.MachineDistribution;
-import com.bancada.enums.MachineNetworkMode;
 import com.bancada.enums.MachineStatus;
 import com.bancada.enums.RouteType;
 import com.bancada.enums.SubscriptionStatus;
@@ -33,7 +32,6 @@ import com.bancada.repository.MachineRepository;
 import com.bancada.repository.SubscriptionRepository;
 import com.bancada.request.CheckoutRequest;
 import com.bancada.request.CustomerRegisterRequest;
-import com.bancada.request.MachinePortRequest;
 import com.bancada.request.MachineRequest;
 import com.bancada.request.PlanRequest;
 import com.bancada.request.RouteRequest;
@@ -86,7 +84,7 @@ class SubscriptionServiceTest {
         phone.applyFacts(new DeviceFacts("j4", "postmarketOS", "edge", "3.18.140", "aarch64", null, 4, null, null, null, null,
             "apk", "openrc", "/root", true));
         customer = withId(new Customer(new CustomerRegisterRequest("Maria Souza", "maria@teste.com", "senha-forte", null, null, true), "hash"), 7L);
-        plan = withId(new Plan(new PlanRequest("VPS 1", null, 1L, 1.0, 256, 5, 2, new BigDecimal("10.00"), true, false, 1), phone), 3L);
+        plan = withId(new Plan(new PlanRequest("VPS 1", null, 1.0, 1024, 20, 2, new BigDecimal("10.00"), true, false, 1)), 3L);
         settings = new PortalSettings();
         when(customerService.requireActive(7L)).thenReturn(customer);
         when(planService.requireForSale(3L)).thenReturn(plan);
@@ -142,10 +140,10 @@ class SubscriptionServiceTest {
     }
 
     @Test
-    void provisioningCreatesAnIsolatedMachineWithThreeFreePortsOfTheRange() throws ReflectiveOperationException {
+    void provisioningCreatesAVirtualMachineWithThePlanResourcesAndAFreeSshPort() throws ReflectiveOperationException {
         Subscription subscription = paidSubscription();
-        Machine machine = withId(new Machine(new MachineRequest(1L, "c7-meu-site", MachineDistribution.UBUNTU, "24.04", 1.0, 256,
-            MachineNetworkMode.BRIDGE, List.of(), List.of(), "maria", "x", true, 22, true), phone), 40L);
+        Machine machine = withId(new Machine(new MachineRequest("c7-meu-site", MachineDistribution.UBUNTU, "24.04", 1, 1024, 20, null, "maria", "x", true),
+            "D:\\", "10.77.0.10", "00:15:5D:4D:00:0A"), 40L);
         when(machineService.create(any(MachineRequest.class))).thenReturn(new com.bancada.response.MachineCreationResponse(
             new com.bancada.response.MachineResponse(machine), 99L));
         when(machineService.findById(40L)).thenReturn(machine);
@@ -154,14 +152,14 @@ class SubscriptionServiceTest {
 
         ArgumentCaptor<MachineRequest> request = ArgumentCaptor.forClass(MachineRequest.class);
         verify(machineService).create(request.capture());
-        assertEquals(MachineNetworkMode.BRIDGE, request.getValue().networkMode());
         assertEquals("c7-meu-site", request.getValue().name());
         assertEquals("senha-servidor", request.getValue().password());
-        List<Integer> hostPorts = request.getValue().ports().stream().map(MachinePortRequest::hostPort).toList();
-        assertEquals(List.of(20001, 20002, 20003), hostPorts, "20000 is taken by a route");
-        assertEquals(List.of(22, 80, 443), request.getValue().ports().stream().map(MachinePortRequest::containerPort).toList());
+        assertEquals(1, request.getValue().cpuCount());
+        assertEquals(1024, request.getValue().memoryMb());
+        assertEquals(20, request.getValue().diskGb());
         assertEquals(SubscriptionStatus.PROVISIONING, subscription.getStatus());
-        assertEquals(20001, subscription.getSshPort());
+        assertEquals(20001, subscription.getSshPort(), "20000 is taken by a route");
+        assertNull(subscription.getHttpPort(), "the machine has its own address: sites go by name");
     }
 
     @Test
@@ -169,7 +167,7 @@ class SubscriptionServiceTest {
         Subscription subscription = paidSubscription();
         subscription.changeStatus(SubscriptionStatus.PROVISIONING);
         Machine machine = withId(new Machine(), 40L);
-        subscription.reserve(machine, 20001, 20002, 20003, null);
+        subscription.reserve(machine, 20001, null);
         when(subscriptionRepository.findByMachineId(40L)).thenReturn(Optional.of(subscription));
 
         subscriptionService.onMachineStatusChanged(new MachineStatusChangedEvent(40L, MachineStatus.RUNNING));
@@ -188,10 +186,10 @@ class SubscriptionServiceTest {
     void lateInvoiceSuspendsTheServerAfterTheGraceDays() throws ReflectiveOperationException {
         Subscription subscription = paidSubscription();
         subscription.changeStatus(SubscriptionStatus.PROVISIONING);
-        Machine machine = withId(new Machine(new MachineRequest(1L, "c7-meu-site", MachineDistribution.UBUNTU, "24.04", 1.0, 256,
-            MachineNetworkMode.BRIDGE, List.of(), List.of(), "maria", "x", true, 22, true), phone), 40L);
+        Machine machine = withId(new Machine(new MachineRequest("c7-meu-site", MachineDistribution.UBUNTU, "24.04", 1, 1024, 20, null, "maria", "x", true),
+            "D:\\", "10.77.0.10", "00:15:5D:4D:00:0A"), 40L);
         machine.changeStatus(MachineStatus.RUNNING);
-        subscription.reserve(machine, 20001, 20002, 20003, null);
+        subscription.reserve(machine, 20001, null);
         subscription.activate(LocalDate.now().minusMonths(12));
         Invoice late = new Invoice(subscription, "renovação", true, LocalDate.now().minusDays(settings.getSuspendAfterDays() + 1));
         when(subscriptionRepository.findByStatusIn(any())).thenReturn(List.of(subscription));

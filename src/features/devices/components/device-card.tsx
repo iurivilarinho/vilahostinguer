@@ -1,4 +1,4 @@
-import { Cable, Network, Server } from "lucide-react";
+import { Cable, MonitorCog, Network, Server } from "lucide-react";
 import { Link } from "react-router-dom";
 import { Badge, Card, Progress, Typography } from "@/components";
 import { Rotas } from "@/app/variables/rotas";
@@ -36,7 +36,7 @@ export const DeviceCard = ({ device }: DeviceCardProps) => {
 
         <div className="flex flex-wrap items-center gap-2">
           <Badge tone="primary">
-            {device.connectionType === "USB" ? <Cable className="size-3" /> : <Network className="size-3" />}
+            {device.connectionType === "USB" ? <Cable className="size-3" /> : device.connectionType === "VIRTUAL" ? <MonitorCog className="size-3" /> : <Network className="size-3" />}
             {device.connectionTypeDescription}
           </Badge>
           <Badge>

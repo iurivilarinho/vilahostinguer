@@ -89,7 +89,7 @@ public class PortalServerService {
         if (machine.getStatus() != MachineStatus.RUNNING) {
             return new MachineStatsResponse(machine.getId(), null, null, null, null);
         }
-        return machineService.stats(machine.getDevice().getId()).stream()
+        return machineService.stats().stream()
             .filter(stats -> stats.machineId().equals(machine.getId()))
             .findFirst()
             .orElse(new MachineStatsResponse(machine.getId(), null, null, null, null));
@@ -151,7 +151,7 @@ public class PortalServerService {
     public Operation operation(Long customerId, Long id, Long operationId) {
         Machine machine = ownedMachine(customerId, id);
         Operation operation = operationService.findById(operationId);
-        boolean ownTarget = machine.getContainerName().equals(operation.getTarget());
+        boolean ownTarget = machine.getVmName().equals(operation.getTarget());
         boolean ownBackup = operation.getTarget() != null && operation.getTarget().startsWith("backup:")
             && backupService.machineBackups(machine.getId()).stream()
                 .anyMatch(backup -> operation.getTarget().equals("backup:" + backup.getId()));

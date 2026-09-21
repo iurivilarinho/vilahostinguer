@@ -4,13 +4,9 @@ import com.bancada.request.PlanRequest;
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
-import jakarta.persistence.FetchType;
-import jakarta.persistence.ForeignKey;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
-import jakarta.persistence.JoinColumn;
-import jakarta.persistence.ManyToOne;
 import jakarta.persistence.PrePersist;
 import jakarta.persistence.PreUpdate;
 import jakarta.persistence.Table;
@@ -18,7 +14,7 @@ import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.Objects;
 
-/** A server offer in the storefront: resources, monthly price and the device that hosts it. */
+/** A server offer in the storefront: resources of the virtual machine and monthly price. */
 @Entity
 @Table(name = "plans")
 @Schema(description = "Plano de servidor à venda")
@@ -36,11 +32,6 @@ public class Plan {
     @Column(name = "description")
     @Schema(description = "Descrição curta")
     private String description;
-
-    @ManyToOne(fetch = FetchType.EAGER, optional = false)
-    @JoinColumn(name = "fk_Id_Device", nullable = false, foreignKey = @ForeignKey(name = "FK_FROM_TBPLANS_FOR_TBDEVICES"))
-    @Schema(description = "Dispositivo onde os servidores são criados")
-    private Device device;
 
     @Column(name = "cpu_limit", nullable = false)
     @Schema(description = "CPUs")
@@ -85,14 +76,13 @@ public class Plan {
     public Plan() {
     }
 
-    public Plan(PlanRequest request, Device device) {
-        update(request, device);
+    public Plan(PlanRequest request) {
+        update(request);
     }
 
-    public final void update(PlanRequest request, Device device) {
+    public final void update(PlanRequest request) {
         this.name = request.name().trim();
         this.description = request.description() == null || request.description().isBlank() ? null : request.description().trim();
-        this.device = device;
         this.cpuLimit = request.cpuLimit();
         this.memoryMb = request.memoryMb();
         this.diskGb = request.diskGb();
@@ -125,10 +115,6 @@ public class Plan {
 
     public String getDescription() {
         return description;
-    }
-
-    public Device getDevice() {
-        return device;
     }
 
     public Double getCpuLimit() {

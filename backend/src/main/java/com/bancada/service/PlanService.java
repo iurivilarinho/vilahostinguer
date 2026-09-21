@@ -5,7 +5,7 @@ import com.bancada.enums.MachineDistribution;
 import com.bancada.enums.MachineStatus;
 import com.bancada.enums.SubscriptionStatus;
 import com.bancada.filter.PlanFilter;
-import com.bancada.models.Device;
+import com.bancada.records.HyperVStatus;
 import com.bancada.models.Machine;
 import com.bancada.models.Plan;
 import com.bancada.models.Subscription;
@@ -21,6 +21,7 @@ import com.bancada.specification.PlanSpecification;
 import jakarta.persistence.EntityNotFoundException;
 import java.util.Arrays;
 import java.util.List;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.domain.Specification;
@@ -28,38 +29,38 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
- * Plans for sale. A plan is available while its device still has memory for one more server:
- * machines already there plus orders waiting to be created, against 90% of the device memory.
+ * Plans for sale. Every server is a virtual machine on this PC; a plan is available while the PC
+ * still has memory for one more.
  */
 @Service
 public class PlanService {
 
     private static final String ENTITY = "Plan";
-    private static final double MEMORY_SHARE_FOR_SERVERS = 0.9;
-    private static final long BYTES_PER_MB = 1024L * 1024L;
     private static final List<SubscriptionStatus> WAITING_FOR_MACHINE = List.of(SubscriptionStatus.PENDING_PAYMENT,
         SubscriptionStatus.PROVISIONING);
 
     private final PlanRepository planRepository;
     private final SubscriptionRepository subscriptionRepository;
     private final MachineRepository machineRepository;
-    private final DeviceService deviceService;
+    private final HyperVService hyperVService;
     private final AuditService auditService;
+    private final long reservedMemoryMb;
 
     public PlanService(PlanRepository planRepository, SubscriptionRepository subscriptionRepository, MachineRepository machineRepository,
-                       DeviceService deviceService, AuditService auditService) {
+                       HyperVService hyperVService, AuditService auditService,
+                       @Value("${bancada.vms.reserved-memory-mb}") long reservedMemoryMb) {
         this.planRepository = planRepository;
         this.subscriptionRepository = subscriptionRepository;
         this.machineRepository = machineRepository;
-        this.deviceService = deviceService;
+        this.hyperVService = hyperVService;
         this.auditService = auditService;
+        this.reservedMemoryMb = reservedMemoryMb;
     }
 
     @Transactional(readOnly = true)
     public Page<Plan> search(PlanFilter filter, Pageable pageable) {
         Specification<Plan> specification = Specification.where(PlanSpecification.search(filter.getSearch()))
-            .and(PlanSpecification.active(filter.getActive()))
-            .and(PlanSpecification.device(filter.getDeviceId()));
+            .and(PlanSpecification.active(filter.getActive()));
         return planRepository.findAll(specification, pageable);
     }
 
@@ -70,8 +71,7 @@ public class PlanService {
 
     @Transactional
     public Plan create(PlanRequest request) {
-        Device device = deviceService.findById(request.deviceId());
-        Plan plan = planRepository.save(new Plan(request, device));
+        Plan plan = planRepository.save(new Plan(request));
         auditService.record(AuditAction.CREATE, ENTITY, plan.getId(), null, new PlanSnapshot(plan), null);
         return plan;
     }
@@ -81,7 +81,7 @@ public class PlanService {
     public Plan update(Long id, PlanRequest request) {
         Plan plan = findById(id);
         PlanSnapshot before = new PlanSnapshot(plan);
-        plan.update(request, deviceService.findById(request.deviceId()));
+        plan.update(request);
         Plan saved = planRepository.save(plan);
         auditService.record(AuditAction.UPDATE, ENTITY, id, before, new PlanSnapshot(saved), null);
         return saved;
@@ -113,31 +113,32 @@ public class PlanService {
     }
 
     public List<DistributionResponse> distributions(Plan plan) {
-        String architecture = plan.getDevice().getArchitecture();
         return Arrays.stream(MachineDistribution.values())
-            .filter(distribution -> distribution.supports(architecture))
             .map(distribution -> new DistributionResponse(distribution, distribution.getDisplayName(), distribution.getVersions(), true))
             .toList();
     }
 
+    /**
+     * One more server fits while this PC has memory for it: machines already there plus orders
+     * waiting to be created, against the PC memory minus what stays for Windows.
+     */
     public boolean isAvailable(Plan plan) {
-        Device device = plan.getDevice();
-        if (!device.isActive()) {
+        HyperVStatus status;
+        try {
+            status = hyperVService.cachedStatus();
+        } catch (RuntimeException exception) {
             return false;
         }
-        if (device.getMemoryTotalBytes() == null) {
-            return true;
+        if (!status.ready()) {
+            return false;
         }
         long committedMb = 0;
-        for (Machine machine : machineRepository.findByDeviceIdAndStatusNot(device.getId(), MachineStatus.REMOVED)) {
-            committedMb += machine.getMemoryLimitMb() == null ? 0 : machine.getMemoryLimitMb();
+        for (Machine machine : machineRepository.findByStatusNot(MachineStatus.REMOVED)) {
+            committedMb += machine.getMemoryMb();
         }
-        for (Subscription subscription : subscriptionRepository.findByPlanDeviceIdAndStatusIn(device.getId(), WAITING_FOR_MACHINE)) {
-            if (subscription.getMachine() == null) {
-                committedMb += subscription.getPlan().getMemoryMb();
-            }
+        for (Subscription subscription : subscriptionRepository.findByStatusInAndMachineIsNull(WAITING_FOR_MACHINE)) {
+            committedMb += subscription.getPlan().getMemoryMb();
         }
-        long capacityMb = (long) (device.getMemoryTotalBytes() / BYTES_PER_MB * MEMORY_SHARE_FOR_SERVERS);
-        return committedMb + plan.getMemoryMb() <= capacityMb;
+        return committedMb + plan.getMemoryMb() <= status.memoryMb() - reservedMemoryMb;
     }
 }

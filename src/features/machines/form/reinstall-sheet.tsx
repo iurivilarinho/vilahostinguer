@@ -25,7 +25,7 @@ export const ReinstallSheet = ({ machine, onClose }: ReinstallSheetProps) => {
     resolver: zodResolver(reinstallFormSchema),
     defaultValues: DEFAULT_REINSTALL_FORM_VALUES,
   });
-  const { data: distributions } = useDistributionsQuery(machine?.device.id, { enabled: machine !== null });
+  const { data: distributions } = useDistributionsQuery({ enabled: machine !== null });
   const { mutateAsync: reinstall, isPending } = useReinstallMachineMutation({ onSuccess: (operation) => openOperationViewer(operation.id) });
   const distribution = watch("distribution");
   const selected = distributions?.find((item) => item.key === distribution);
@@ -55,7 +55,7 @@ export const ReinstallSheet = ({ machine, onClose }: ReinstallSheetProps) => {
       open={machine !== null}
       onOpenChange={(open) => !open && onClose()}
       title={machine ? `Reinstalar ${machine.name}` : "Reinstalar"}
-      description="Apaga o sistema da máquina e instala de novo, do zero. Recursos, rede, portas, pastas compartilhadas e o usuário continuam os mesmos."
+      description="Apaga o disco da máquina e instala de novo, do zero. Processadores, memória, endereço, o usuário e o acesso do painel continuam os mesmos."
       footer={
         <>
           <Button variant="outline" onClick={onClose} disabled={isPending}>
@@ -71,16 +71,15 @@ export const ReinstallSheet = ({ machine, onClose }: ReinstallSheetProps) => {
         <div className="flex gap-3 rounded-lg border border-warning bg-warning-soft p-3 text-warning-foreground">
           <AlertTriangle className="size-5 shrink-0" />
           <Typography variant="caption" as="p" className="text-warning-foreground">
-            Tudo o que foi instalado ou gravado dentro da máquina é apagado. Só as pastas compartilhadas com o dispositivo ficam.
+            Tudo o que foi instalado ou gravado na máquina é apagado. Discos do PC conectados a ela precisam ser conectados de novo.
           </Typography>
         </div>
         <div className="grid gap-4 sm:grid-cols-2">
           <FieldWrapper label="Distribuição" htmlFor="reinstall-distribution">
             <Select id="reinstall-distribution" {...register("distribution")}>
               {(distributions ?? []).map((item) => (
-                <option key={item.key} value={item.key} disabled={!item.supported}>
+                <option key={item.key} value={item.key}>
                   {item.name}
-                  {item.supported ? "" : " (sem imagem para este processador)"}
                 </option>
               ))}
             </Select>

@@ -2,7 +2,7 @@ import { z } from "zod";
 
 export const reinstallFormSchema = z
   .object({
-    distribution: z.enum(["UBUNTU", "DEBIAN", "ALPINE", "FEDORA", "ROCKY", "ARCH"]),
+    distribution: z.enum(["UBUNTU", "DEBIAN", "ROCKY", "ALMA"]),
     version: z.string().min(1, "Escolha a versão"),
     password: z.string().min(4, "Use ao menos 4 caracteres").max(128, "Use até 128 caracteres"),
     confirmation: z.string(),

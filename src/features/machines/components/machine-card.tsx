@@ -1,5 +1,7 @@
-import { Archive, Box, Disc3, FileText, Globe, MoreHorizontal, Play, Power, RotateCw, SquareTerminal, Trash2 } from "lucide-react";
+import { Archive, Disc3, ExternalLink, FileText, Globe, MonitorCog, MoreHorizontal, Play, Power, RotateCw, SquareTerminal, Trash2 } from "lucide-react";
+import { useNavigate } from "react-router-dom";
 import { Badge, Button, Card, DropdownMenu, Progress, Typography } from "@/components";
+import { Rotas } from "@/app/variables/rotas";
 import { cn } from "@/lib/merge-classes";
 import type { MachineDto, MachineStatsDto, MachineStatus } from "../api";
 
@@ -11,11 +13,11 @@ const STATUS_TONE: Record<MachineStatus, "info" | "success" | "neutral" | "destr
   REMOVED: "neutral",
 };
 
+const formatMemory = (memoryMb: number) => (memoryMb >= 1024 ? `${(memoryMb / 1024).toLocaleString("pt-BR", { maximumFractionDigits: 1 })} GB` : `${memoryMb} MB`);
+
 type MachineCardProps = {
   machine: MachineDto;
   stats?: MachineStatsDto;
-  deviceHost: string;
-  showDevice?: boolean;
   onTerminal: (machine: MachineDto) => void;
   onLogs: (machine: MachineDto) => void;
   onAction: (machine: MachineDto, action: "START" | "STOP" | "RESTART") => void;
@@ -25,44 +27,33 @@ type MachineCardProps = {
   onReinstall: (machine: MachineDto) => void;
 };
 
-export const MachineCard = ({ machine, stats, deviceHost, showDevice = false, onTerminal, onLogs, onAction, onRemove, onPublish, onBackups, onReinstall }: MachineCardProps) => {
+export const MachineCard = ({ machine, stats, onTerminal, onLogs, onAction, onRemove, onPublish, onBackups, onReinstall }: MachineCardProps) => {
+  const navigate = useNavigate();
   const running = machine.status === "RUNNING";
   const busy = machine.status === "CREATING";
-  const sshCommand = machine.sshEnabled
-    ? machine.networkMode === "HOST"
-      ? `ssh ${machine.username}@${deviceHost} -p ${machine.sshPort}`
-      : machine.ports.find((port) => port.containerPort === machine.sshPort)
-        ? `ssh ${machine.username}@${deviceHost} -p ${machine.ports.find((port) => port.containerPort === machine.sshPort)?.hostPort}`
-        : null
-    : null;
+  const sshCommand = `ssh ${machine.username}@${machine.ipAddress}`;
 
   return (
     <Card className="flex flex-col gap-4 p-5">
       <div className="flex items-start gap-3">
         <div className={cn("flex size-11 shrink-0 items-center justify-center rounded-lg", running ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground")}>
-          <Box className="size-5" />
+          <MonitorCog className="size-5" />
         </div>
         <div className="flex min-w-0 flex-1 flex-col">
           <Typography variant="title-sm" className="truncate">
             {machine.name}
           </Typography>
           <Typography variant="caption" className="truncate">
-            {machine.distributionName} {machine.version}
-            {showDevice ? ` · ${machine.device.name}` : ""}
+            {machine.distributionName} {machine.version} · {machine.ipAddress}
           </Typography>
         </div>
         <Badge tone={STATUS_TONE[machine.status]}>{machine.statusDescription}</Badge>
       </div>
 
       <div className="flex flex-wrap gap-2">
-        <Badge tone="primary">{machine.networkModeDescription}</Badge>
-        {machine.cpuLimit !== null && <Badge>{machine.cpuLimit} CPU</Badge>}
-        {machine.memoryLimitMb !== null && <Badge>{machine.memoryLimitMb} MB</Badge>}
-        {machine.ports.map((port) => (
-          <Badge key={`${port.hostPort}-${port.protocol}`} className="font-mono">
-            {port.hostPort}→{port.containerPort}/{port.protocol}
-          </Badge>
-        ))}
+        <Badge tone="primary">{machine.cpuCount} {machine.cpuCount === 1 ? "processador" : "processadores"}</Badge>
+        <Badge>{formatMemory(machine.memoryMb)} de memória</Badge>
+        <Badge>{machine.diskGb} GB de disco em {machine.drive}</Badge>
       </div>
 
       {running && stats && (
@@ -70,28 +61,26 @@ export const MachineCard = ({ machine, stats, deviceHost, showDevice = false, on
           <div className="flex items-center justify-between">
             <Typography variant="caption">CPU</Typography>
             <Typography variant="caption" className="text-foreground">
-              {stats.cpuPercent?.toFixed(1) ?? "—"}%
+              {stats.cpuPercent?.toFixed(0) ?? "—"}%
             </Typography>
           </div>
           <Progress value={stats.cpuPercent ?? 0} aria-label="CPU" />
           <div className="flex items-center justify-between">
             <Typography variant="caption">Memória</Typography>
             <Typography variant="caption" className="text-foreground">
-              {stats.memoryUsage}
+              {stats.memoryUsage ?? "—"}
             </Typography>
           </div>
           <Progress value={stats.memoryPercent ?? 0} aria-label="Memória" />
         </div>
       )}
 
-      {sshCommand && (
-        <Typography variant="mono" className="truncate rounded-md bg-muted px-2 py-1 text-muted-foreground" title={sshCommand}>
-          {sshCommand}
-        </Typography>
-      )}
+      <Typography variant="mono" className="truncate rounded-md bg-muted px-2 py-1 text-muted-foreground" title={sshCommand}>
+        {sshCommand}
+      </Typography>
 
       <div className="mt-auto flex items-center justify-end gap-2">
-        <Button size="sm" onClick={() => onTerminal(machine)} disabled={!running}>
+        <Button size="sm" onClick={() => onTerminal(machine)} disabled={!running || !machine.device}>
           <SquareTerminal />
           Terminal
         </Button>
@@ -113,8 +102,14 @@ export const MachineCard = ({ machine, stats, deviceHost, showDevice = false, on
             </Button>
           }
           items={[
+            {
+              label: "Abrir como dispositivo",
+              icon: <ExternalLink />,
+              disabled: !machine.device,
+              onSelect: () => machine.device && navigate(Rotas.devices.detail(machine.device.id)),
+            },
             { label: "Reiniciar", icon: <RotateCw />, disabled: !running, onSelect: () => onAction(machine, "RESTART") },
-            { label: "Ver saída", icon: <FileText />, disabled: busy, onSelect: () => onLogs(machine) },
+            { label: "Ver registro do sistema", icon: <FileText />, disabled: !running, onSelect: () => onLogs(machine) },
             { label: "Publicar na internet", icon: <Globe />, disabled: busy, onSelect: () => onPublish(machine) },
             { label: "Backups", icon: <Archive />, onSelect: () => onBackups(machine) },
             { label: "Reinstalar / trocar sistema", icon: <Disc3 />, disabled: busy, onSelect: () => onReinstall(machine) },

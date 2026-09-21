@@ -32,6 +32,7 @@ import java.security.NoSuchAlgorithmException;
 import java.time.Duration;
 import java.util.Arrays;
 import java.util.Base64;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
@@ -338,6 +339,20 @@ public class SshService {
         }
     }
 
+    /**
+     * Host key algorithms with the type pinned on the device first: a server with several host keys
+     * (RSA and ed25519) must show the one whose fingerprint was recorded.
+     */
+    static String preferPinnedType(String pinnedType, String algorithms) {
+        if (pinnedType == null || pinnedType.isBlank()) {
+            return algorithms;
+        }
+        String preferred = "ssh-rsa".equals(pinnedType) ? "rsa-sha2-512,rsa-sha2-256,ssh-rsa" : pinnedType;
+        LinkedHashSet<String> ordered = new LinkedHashSet<>(List.of(preferred.split(",")));
+        ordered.addAll(List.of(algorithms.split(",")));
+        return String.join(",", ordered);
+    }
+
     private Session connect(Device device, Credential credential) {
         JSch jsch = new JSch();
         jsch.setHostKeyRepository(new CapturingHostKeyRepository(device.getHostKeyFingerprint()));
@@ -355,7 +370,7 @@ public class SshService {
             }
             session.setConfig("StrictHostKeyChecking", "yes");
             session.setConfig("PreferredAuthentications", "publickey,keyboard-interactive,password");
-            session.setConfig("server_host_key", session.getConfig("server_host_key") + ",ssh-rsa");
+            session.setConfig("server_host_key", preferPinnedType(device.getHostKeyType(), session.getConfig("server_host_key") + ",ssh-rsa"));
             session.setConfig("PubkeyAcceptedAlgorithms", session.getConfig("PubkeyAcceptedAlgorithms") + ",ssh-rsa");
             session.setServerAliveInterval(SERVER_ALIVE_INTERVAL_MS);
             session.setServerAliveCountMax(3);

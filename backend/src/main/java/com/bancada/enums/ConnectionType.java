@@ -9,7 +9,10 @@ public enum ConnectionType {
     USB("Cabo USB"),
 
     @Schema(description = "Rede local ou internet")
-    NETWORK("Rede");
+    NETWORK("Rede"),
+
+    @Schema(description = "Máquina virtual deste PC (Hyper-V), na rede interna do Bancada")
+    VIRTUAL("Máquina virtual");
 
     private final String description;
 

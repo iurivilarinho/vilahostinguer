@@ -17,7 +17,7 @@ arquivos, backups e armazenamento sem abrir outro programa.
 | **Arquivos** | Navegar, enviar, baixar, criar pasta e apagar (pastas só vazias). Funciona com dropbear sem sftp-server. |
 | **Backups** | `tar.gz` das pastas escolhidas, gerado no aparelho e gravado direto neste computador (nada fica no aparelho), com SHA-256. Baixar, restaurar com um clique, descartar (o registro fica). |
 | **Armazenamento** | Discos e partições com uso. Formatação (ext4/FAT32) só de partições de dados; as de sistema do aparelho (boot, modem, efs, persist…) e as montadas ficam protegidas, e a confirmação exige digitar o nome. Em kernel antigo (3.x), o ext4 sai sem `metadata_csum_seed`/`orphan_file` para ele conseguir montar. |
-| **Máquinas** | Máquinas Linux (Ubuntu, Debian, Alpine, Fedora, Rocky, Arch — só as que têm imagem para o processador) em contêineres Docker de sistema: versão, limite de CPU e memória, rede do dispositivo ou isolada com portas, pastas compartilhadas, usuário com sudo e SSH próprio. Ligar, desligar, reiniciar, terminal direto na máquina, saída, uso ao vivo. **Backup da máquina inteira** (`docker export` compactado, gravado neste PC), **restaurar** a partir dele, **reinstalar do zero** e **trocar a distribuição ou a versão** (com backup automático antes, se quiser). As pastas compartilhadas nunca são apagadas. |
+| **Máquinas** | **Máquinas virtuais Linux neste PC (Hyper-V)**: Ubuntu, Debian, Rocky ou AlmaLinux a partir da imagem oficial de nuvem da distribuição, com processadores, memória e disco próprios, IP fixo numa rede interna com internet pelo PC, usuário com sudo e SSH. Cada máquina aparece também em **Dispositivos**, par do celular e das placas: terminal, aplicativos, arquivos, backups e rotas funcionam nela igual. Ligar, desligar, reiniciar, uso ao vivo, **backup** (cópia do disco com checkpoint), **restaurar**, **reinstalar** e **trocar a distribuição ou a versão**. Ver [Máquinas virtuais](#máquinas-virtuais-hyper-v). |
 | **Discos do PC** | Usa o espaço dos SSDs e HDs deste computador nos dispositivos e nas máquinas. Cada disco é um arquivo esparso num disco NTFS do PC, com o tamanho todo reservado (o painel nunca promete mais do que há livre); o dispositivo o recebe pela rede (NBD), formata em ext4 na primeira vez e monta numa pasta — dele ou de uma máquina. Ver [Discos do PC](#discos-do-pc). |
 | **Negócio** | Planos com preço por ciclo (mensal, trimestral, semestral, anual com desconto), clientes, contratos, faturas, configuração do painel do cliente e trilha de auditoria de tudo o que muda. |
 | **Painel do cliente** | Site separado, no estilo do hPanel, em que o cliente se cadastra, escolhe um plano, paga por Pix e gerencia o próprio servidor: ligar/desligar, uso ao vivo, terminal no navegador, trocar sistema, backups, senha do SSH, faturas. Ver [Painel do cliente](#painel-do-cliente). |
@@ -107,13 +107,15 @@ Use `MAVEN_CMD` para apontar um Maven que não esteja no PATH.
 
 ## Preparando um aparelho
 
-O painel espera SSH ativo e rede pelo cabo. Nos celulares com postmarketOS configurados como no
+O celular e as placas são servidores próprios, pares das máquinas virtuais — não rodam máquinas
+dentro deles. O painel espera SSH ativo e rede pelo cabo. Nos celulares com postmarketOS configurados como no
 projeto [postmarketOS no Galaxy J4+](https://github.com/iurivilarinho/postmarketOS), o aparelho fica
 em `169.254.1.1` pelo cabo USB (NCM) e é detectado sozinho.
 
 ### Docker em kernel antigo
 
-Instalar o Docker pelo painel já prepara aparelhos com kernel 3.x (o J4+ roda 3.18). O kernel
+O Docker continua no catálogo de aplicativos para quem quiser rodar contêineres num aparelho; as
+máquinas do painel não dependem dele. Instalar o Docker pelo painel já prepara aparelhos com kernel 3.x (o J4+ roda 3.18). O kernel
 precisa ter namespaces, cgroups (memory, devices, cpuset), veth, bridge e NAT — no J4+ isso exigiu
 recompilar com essas opções. Além disso, o `docker-setup.sh`:
 
@@ -150,6 +152,50 @@ Outros detalhes que só aparecem nesse kernel:
 4. Com CGNAT (a visão geral avisa), nenhum redirecionamento funciona: é preciso IP público da
    operadora ou um túnel.
 
+## Máquinas virtuais (Hyper-V)
+
+```
+PC (Windows + Hyper-V) ── switch interno "Bancada", PC em 10.77.0.1, NAT para a internet
+  ├── bancada-web-1    10.77.0.10   Ubuntu 24.04   2 CPU · 2 GB · 20 GB   ← também em Dispositivos
+  ├── bancada-db       10.77.0.11   Debian 12      ...
+  └── ...
+Celular J4+ (USB) ── um servidor a mais, par das máquinas
+```
+
+**Preparar o PC (uma vez, como administrador):**
+
+```powershell
+powershell -ExecutionPolicy Bypass -File tools\habilitar-hyperv.ps1 -Usuario "DOMINIO\seu.usuario"
+```
+
+Na primeira vez o script ativa o Hyper-V e põe o usuário no grupo *Administradores do Hyper-V*
+(o painel controla as VMs sem rodar como administrador) e pede para reiniciar. Rodado de novo, cria
+a rede das máquinas: switch interno `Bancada`, o PC em `10.77.0.1` e NAT. A página **Máquinas**
+mostra o que falta.
+
+**Criar.** Nome, distribuição e versão, processadores, memória, disco, disco do PC onde fica,
+usuário e senha. O painel:
+
+1. baixa a imagem de nuvem oficial (Ubuntu, Debian, Rocky, AlmaLinux), confere o checksum que a
+   distribuição publica e a converte (qcow2 → VHD em Java, VHD → VHDX pelo Hyper-V) — só na
+   primeira máquina de cada versão; fica em `~/.bancada/imagens`;
+2. copia o disco para `<disco do PC>\BancadaVMs\bancada-<nome>` e o aumenta até o tamanho pedido;
+3. gera o *seed* do cloud-init (um ISO `cidata`): usuário com sudo e senha, a chave do painel para
+   o root, a **chave SSH de servidor gerada pelo próprio painel** (a identidade da máquina fica
+   fixada antes do primeiro boot) e o IP fixo;
+4. cria a VM (geração 2, memória fixa, Secure Boot com o modelo da CA UEFI da Microsoft, MAC fixo),
+   liga, espera o SSH e o fim do cloud-init e lê as informações do novo dispositivo.
+
+**Capacidade.** Memória: a do PC menos 4 GB para o Windows (`BANCADA_VM_RESERVED_MB`) menos o que
+as máquinas já têm. Disco: o tamanho todo fica reservado no disco do PC, junto com os discos
+virtuais. Processadores: no máximo os do PC por máquina.
+
+**Manutenção.** Backup = checkpoint de produção (os `hyperv-daemons` instalados na máquina congelam
+os sistemas de arquivos), cópia do VHDX para a pasta de backups e o checkpoint de volta. Restaurar
+troca o disco pela cópia. Reinstalar troca o disco por um novo da imagem, com a mesma chave de
+servidor, o mesmo IP e o mesmo acesso do painel. Remover apaga a VM e a pasta; o dispositivo é
+arquivado e os backups ficam.
+
 ## Discos do PC
 
 ```
@@ -167,12 +213,10 @@ E:\BancadaDiscos\dados.img  ── NBD :10809 ──> /dev/nbd0 (ext4) ──> /
   disco que já teve sistema de arquivos), roda `e2fsck -p` nas outras e monta. A pasta de montagem
   fica travada (`chattr +i`) enquanto o disco não está nela, para nada ser gravado no aparelho por
   engano.
-- **Conectar a uma máquina**: o disco é montado em `/srv/bancada/discos/<nome>` no dispositivo e
-  aparece na pasta escolhida dentro da máquina. O Docker não acrescenta pastas a um contêiner
-  existente, então o sistema da máquina é guardado (`docker commit`) e ela é recriada com o disco —
-  nada se perde, mas ela reinicia.
-- **Reinícios**: dispositivo reiniciou → a cada minuto o painel vê que ele voltou e conecta, monta e
-  reinicia a máquina que usa o disco. PC reiniciou → a pasta dá erro de E/S enquanto o painel está
+- **Conectar a uma máquina**: a máquina virtual é um dispositivo como os outros; o disco é montado
+  dentro dela, na pasta escolhida (por exemplo `/var/lib/mysql`), e fica do usuário dela.
+- **Reinícios**: dispositivo reiniciou → a cada minuto o painel vê que ele voltou, conecta e monta
+  de novo. PC reiniciou → a pasta dá erro de E/S enquanto o painel está
   fora; quando ele sobe, desfaz a montagem morta, confere o disco e monta de novo.
 - **Segurança**: o NBD não tem senha. Cada disco tem um nome secreto (128 bits) e só é entregue ao
   endereço do dispositivo que o recebeu; listar os discos é recusado. O tráfego não é cifrado — pelo
@@ -202,9 +246,10 @@ Nasce um contrato *aguardando pagamento* com a primeira fatura. A fatura é paga
 - **manual**: sem token, o cliente vê as instruções e o administrador confirma em **Negócio →
   Faturas**.
 
-Paga a fatura, o servidor é criado sozinho no dispositivo do plano: máquina em rede isolada, com
-três portas da faixa (SSH, 80 e 443) e as rotas correspondentes — com domínio de sites configurado,
-o site fica em `nome.dominio`.
+Paga a fatura, o servidor é criado sozinho: uma máquina virtual neste PC com os processadores,
+a memória e o disco do plano, uma porta pública da faixa para o SSH e, com domínio de sites
+configurado, o site em `nome.dominio` (HTTP e HTTPS por nome). Um plano fica esgotado quando o PC
+não tem mais memória para outra máquina.
 
 **Ciclo de cobrança** (a cada 10 minutos): fatura de renovação alguns dias antes do vencimento;
 atraso além do limite suspende (a máquina é desligada e as rotas saem do ar); atraso maior cancela
@@ -230,9 +275,9 @@ descarta backups (limite por plano); troca a senha do SSH; edita os dados e a se
 
 - Não há envio de e-mail: a recuperação de senha é pelo suporte (o admin redefine em
   **Clientes**).
-- As máquinas são contêineres num kernel compartilhado (3.18 no J4+, sem as proteções dos kernels
-  novos). Serve para clientes conhecidos, não para estranhos com root que podem tentar escapar do
-  contêiner.
+- Cada servidor é uma máquina virtual com kernel próprio (isolamento de hipervisor). O painel entra
+  nela como root com uma chave própria, para terminal, aplicativos e backups — o cliente precisa
+  saber disso.
 - Para o painel e os servidores serem vistos de fora valem as mesmas condições de
   [Acesso de fora](#acesso-de-fora): portas redirecionadas e sem CGNAT.
 
@@ -248,7 +293,11 @@ descarta backups (limite por plano); troca a senha do SSH; edita os dados e a se
   `ddl-auto: update` nunca o atualiza, então um valor novo seria recusado em bancos antigos. O
   `EnumCheckCleaner` reconstrói as tabelas sem esses `CHECK` antes do Hibernate subir.
 - **Gateway** fica em `gateway/` (infraestrutura de sockets), fora de `service/`, que só tem
-  classes `@Service`. Pelo mesmo motivo o servidor NBD e o arquivo de disco ficam em `nbd/`.
+  classes `@Service`. Pelo mesmo motivo o servidor NBD e o arquivo de disco ficam em `nbd/`, e o
+  PowerShell, o conversor qcow2 → VHD, o cloud-init e as chaves das VMs em `hyperv/`.
+- **Máquinas deixaram de ser contêineres**: a `VirtualMachineMigration` (roda antes do Hibernate,
+  uma vez) apaga as tabelas das máquinas-contêiner antigas, as rotas e os backups de máquina que
+  apontavam para elas (os arquivos ficam no disco) e tira o dispositivo obrigatório dos planos.
 - **Painel do cliente no mesmo projeto**: é uma segunda página do Vite (`portal.html`, entrada
   `src/portal-main.tsx`) com casca e rotas próprias em `app/portal/` e telas em
   `features/portal/`. Os componentes, o design system e o cliente HTTP são os mesmos; o bundle do

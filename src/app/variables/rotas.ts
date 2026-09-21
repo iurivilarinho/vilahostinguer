@@ -2,7 +2,6 @@ export type DeviceSection =
   | "visao-geral"
   | "terminal"
   | "aplicativos"
-  | "maquinas"
   | "arquivos"
   | "backups"
   | "armazenamento"

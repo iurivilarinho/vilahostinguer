@@ -8,7 +8,6 @@ import com.bancada.enums.VolumeStatus;
 import com.bancada.filter.VolumeFilter;
 import com.bancada.models.Device;
 import com.bancada.models.Machine;
-import com.bancada.models.MachineVolume;
 import com.bancada.models.Operation;
 import com.bancada.models.Volume;
 import com.bancada.nbd.NbdServer;
@@ -53,7 +52,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 /**
  * Disks of this PC lent to the devices. The file lives here; the device attaches it over the
- * network (NBD) and mounts it, for itself or for one of its machines. A device that reboots gets
+ * network (NBD) and mounts it; a virtual machine of this PC is a device like any other. A device that reboots gets
  * its disks back as soon as it answers again; when this PC restarts, {@code nbd-client -persist}
  * on the device reconnects by itself.
  */
@@ -64,7 +63,6 @@ public class VolumeService {
     private static final long GIGABYTE = 1L << 30;
     private static final Duration RECONNECT_TIMEOUT = Duration.ofMinutes(3);
     private static final String DEVICE_MOUNT_ROOT = "/mnt/";
-    private static final String MACHINE_MOUNT_ROOT = "/srv/bancada/discos/";
     private static final List<String> MOUNT_ROOTS = List.of("/mnt/", "/media/", "/srv/", "/home/", "/opt/", "/data/");
     private static final Set<String> SYSTEM_FOLDERS = Set.of("/", "/bin", "/boot", "/dev", "/etc", "/lib", "/lib64", "/proc",
         "/root", "/run", "/sbin", "/sys", "/tmp", "/usr", "/var", "/home", "/srv", "/opt", "/mnt", "/media");
@@ -187,8 +185,8 @@ public class VolumeService {
     }
 
     /**
-     * Gives the disk to a device, mounted at a folder, or to a machine (mounted on its device and
-     * handed into the container, which is recreated for that).
+     * Gives the disk to a device, mounted at a folder. A machine is a device of its own (a virtual
+     * machine of this PC): the disk is mounted inside it, at the folder asked for.
      */
     public Operation attach(Long id, VolumeAttachRequest request) {
         requireServer();
@@ -198,6 +196,9 @@ public class VolumeService {
                 + ". Desconecte antes de entregar a outro lugar.");
         }
         Machine machine = request.machineId() == null ? null : machineService.findById(request.machineId());
+        if (machine != null && machine.getStatus() != MachineStatus.RUNNING) {
+            throw new IllegalStateException("Ligue a máquina " + machine.getName() + " antes de conectar o disco.");
+        }
         Long deviceId = machine != null ? machine.getDevice().getId() : request.deviceId();
         if (deviceId == null) {
             throw new IllegalArgumentException("Escolha o dispositivo ou a máquina.");
@@ -206,39 +207,30 @@ public class VolumeService {
             throw new IllegalStateException("O disco ainda está registrado em " + volume.getDevice().getName() + ". Desconecte antes.");
         }
         Device device = deviceService.requireReady(deviceId);
-        String mountPath = blankToNull(request.mountPath());
-        if (mountPath == null) {
-            mountPath = (machine == null ? DEVICE_MOUNT_ROOT : MACHINE_MOUNT_ROOT) + volume.getName();
+        String mountPath;
+        if (machine != null) {
+            mountPath = blankToNull(request.containerPath()) != null ? blankToNull(request.containerPath()) : blankToNull(request.mountPath());
+            if (mountPath == null) {
+                mountPath = DEVICE_MOUNT_ROOT + volume.getName();
+            }
+            validateContainerPath(mountPath);
+        } else {
+            mountPath = blankToNull(request.mountPath()) == null ? DEVICE_MOUNT_ROOT + volume.getName() : blankToNull(request.mountPath());
+            validateMountPath(mountPath);
         }
-        validateMountPath(mountPath);
         if (volumeRepository.existsByDeviceIdAndMountPathAndIdNot(deviceId, mountPath, id)) {
             throw new IllegalArgumentException("Outro disco já usa a pasta " + mountPath + " neste dispositivo.");
         }
-        String containerPath = null;
-        if (machine != null) {
-            containerPath = blankToNull(request.containerPath());
-            validateContainerPath(containerPath);
-            String wanted = containerPath;
-            if (machine.getVolumes().stream().anyMatch(existing -> existing.getContainerPath().equals(wanted))) {
-                throw new IllegalArgumentException("A máquina já tem uma pasta em " + containerPath + ".");
-            }
-            if (machine.getStatus() != MachineStatus.RUNNING && machine.getStatus() != MachineStatus.STOPPED) {
-                throw new IllegalStateException("A máquina " + machine.getName() + " está " + machine.getStatus().getDescription().toLowerCase() + ".");
-            }
-        }
         String pcAddress = localAddressFor(device.getHost());
-        MachineStatus machineBefore = machine == null ? null : machineService.startPreparation(machine.getId());
-        assign(id, device, mountPath, machine, containerPath);
+        assign(id, device, mountPath, machine, machine == null ? null : mountPath);
         String title = "Conectar o disco " + volume.getName() + (machine == null ? " em " + mountPath : " à máquina " + machine.getName());
         String script = attachScript(volume, device, pcAddress, mountPath);
-        Machine target = machine;
-        String hostPath = mountPath;
-        String insidePath = containerPath;
+        String owner = machine == null ? null : machine.getUsername();
+        String mounted = mountPath;
         try {
             return operationService.start(device, OperationType.VOLUME_ATTACH, title, volume.getName(), operationId -> {
                 StringBuilder output = new StringBuilder();
                 int exitCode = 1;
-                boolean rebuilt = false;
                 try {
                     exitCode = sshService.stream(device, script, true, chunk -> {
                             output.append(chunk);
@@ -247,12 +239,10 @@ public class VolumeService {
                         channel -> operationService.registerChannel(operationId, channel));
                     if (exitCode == 0 && output.indexOf("FORMATTED=1") >= 0) {
                         markFormatted(id);
-                    }
-                    if (exitCode == 0 && target != null) {
-                        rebuilt = true;
-                        exitCode = rebuildMachine(operationId, device, target.getId(), new MachineVolume(hostPath, insidePath), null, insidePath);
-                        if (exitCode != 0) {
-                            output.append("\nO disco foi montado, mas a máquina não foi recriada com ele.\n");
+                        if (owner != null) {
+                            // a fresh disk of a machine belongs to its user, not to root
+                            sshService.run(device, "chown " + SshService.quote(owner) + ": " + SshService.quote(mounted), List.of(), true,
+                                RECONNECT_TIMEOUT);
                         }
                     }
                     return exitCode;
@@ -261,67 +251,41 @@ public class VolumeService {
                     output.append('\n').append(exception.getMessage()).append('\n');
                     throw exception;
                 } finally {
-                    if (target != null) {
-                        // before the rebuild the container was never touched: it goes back as it was
-                        machineService.updateStatus(target.getId(), !rebuilt ? machineBefore
-                            : exitCode == 0 ? MachineStatus.RUNNING : MachineStatus.FAILED);
-                    }
                     finishAttach(id, exitCode, output);
                 }
             });
         } catch (RuntimeException exception) {
             changeStatus(id, VolumeStatus.FAILED, exception.getMessage());
-            if (machineBefore != null) {
-                machineService.updateStatus(machine.getId(), machineBefore);
-            }
             throw exception;
         }
     }
 
-    /** Unmounts on the device (recreating the machine without it first) and disconnects. */
+    /** Unmounts on the device and disconnects. */
     public Operation detach(Long id) {
         Volume volume = requireHeld(id);
         Device device = deviceService.requireReady(volume.getDevice().getId());
-        Machine machine = volume.getMachine();
-        MachineStatus machineBefore = machine == null ? null : machineService.startPreparation(machine.getId());
         changeStatus(id, VolumeStatus.DETACHING, null);
-        String mountPath = volume.getMountPath();
-        String script = "volume_id=" + volume.getId() + "\nmount_path=" + SshService.quote(mountPath) + "\n"
+        String script = "volume_id=" + volume.getId() + "\nmount_path=" + SshService.quote(volume.getMountPath()) + "\n"
             + deviceScriptService.load("volume-detach");
         try {
             return operationService.start(device, OperationType.VOLUME_DETACH, "Desconectar o disco " + volume.getName(),
                 volume.getName(), operationId -> {
                     int exitCode = 1;
-                    boolean rebuilt = false;
                     String failure = "Não desconectou. Veja a atividade para o motivo.";
                     try {
-                        exitCode = 0;
-                        if (machine != null) {
-                            exitCode = rebuildMachine(operationId, device, machine.getId(), null, mountPath, null);
-                            rebuilt = true;
-                        }
-                        if (exitCode == 0) {
-                            exitCode = sshService.stream(device, script, true, chunk -> operationService.appendOutput(operationId, chunk),
-                                channel -> operationService.registerChannel(operationId, channel));
-                        }
+                        exitCode = sshService.stream(device, script, true, chunk -> operationService.appendOutput(operationId, chunk),
+                            channel -> operationService.registerChannel(operationId, channel));
                         return exitCode;
                     } catch (RuntimeException exception) {
                         exitCode = 1;
                         failure = exception.getMessage();
                         throw exception;
                     } finally {
-                        if (machine != null) {
-                            machineService.updateStatus(machine.getId(), rebuilt && exitCode != 0 ? MachineStatus.FAILED
-                                : rebuilt ? MachineStatus.RUNNING : machineBefore);
-                        }
                         finishDetach(id, exitCode, failure);
                     }
                 });
         } catch (RuntimeException exception) {
             changeStatus(id, VolumeStatus.FAILED, exception.getMessage());
-            if (machineBefore != null) {
-                machineService.updateStatus(machine.getId(), machineBefore);
-            }
             throw exception;
         }
     }
@@ -363,7 +327,7 @@ public class VolumeService {
 
     /**
      * Every minute: disks whose device came back (a reboot drops every NBD attachment) are attached
-     * and mounted again, and a running machine that uses one is restarted to see it.
+     * and mounted again.
      */
     @Scheduled(initialDelay = 90_000, fixedDelay = 60_000)
     public void reconnectWaiting() {
@@ -396,25 +360,9 @@ public class VolumeService {
                 changeMessage(id, "Não reconectou: " + lastLine(result.output() + "\n" + result.errorOutput()));
                 return;
             }
-            Machine machine = volume.getMachine();
-            if (machine != null && machine.getStatus() == MachineStatus.RUNNING) {
-                // started at boot on the empty (locked) folder: a restart shows the mounted disk
-                sshService.run(device, "docker restart " + SshService.quote(machine.getContainerName()) + " >/dev/null", List.of(), true,
-                    RECONNECT_TIMEOUT);
-            }
         } catch (RuntimeException exception) {
             changeMessage(id, "Não reconectou: " + exception.getMessage());
         }
-    }
-
-    private int rebuildMachine(Long operationId, Device device, Long machineId, MachineVolume added, String removedHostPath,
-                               String handOver) {
-        Machine current = machineService.findById(machineId);
-        String snapshot = machineService.snapshotImage(current);
-        Machine changed = machineService.changeVolumes(machineId, added, removedHostPath, snapshot);
-        return sshService.stream(device, machineService.rebuildScript(changed, snapshot, handOver), true,
-            chunk -> operationService.appendOutput(operationId, chunk),
-            channel -> operationService.registerChannel(operationId, channel));
     }
 
     /** Only the device the disk was given to gets it, and only by its secret name. */
@@ -513,11 +461,6 @@ public class VolumeService {
             nbdServer.disconnect(id);
         }
         Volume volume = findById(id);
-        if (volume.getMachine() != null) {
-            // the container keeps the old folder until it is recreated; the record must not promise it
-            Machine machine = volume.getMachine();
-            machineService.changeVolumes(machine.getId(), null, volume.getMountPath(), machine.getImage());
-        }
         if (volume.getStatus() != VolumeStatus.FAILED) {
             volume.changeStatus(VolumeStatus.FAILED, null);
         }

@@ -2,7 +2,6 @@ package com.bancada.service;
 
 import com.bancada.enums.AuditAction;
 import com.bancada.enums.MachineAction;
-import com.bancada.enums.MachineNetworkMode;
 import com.bancada.enums.MachineStatus;
 import com.bancada.enums.RouteStatus;
 import com.bancada.enums.RouteType;
@@ -11,20 +10,17 @@ import com.bancada.filter.SubscriptionFilter;
 import com.bancada.models.Customer;
 import com.bancada.models.Invoice;
 import com.bancada.models.Machine;
-import com.bancada.models.MachinePort;
 import com.bancada.models.Plan;
 import com.bancada.models.PortalSettings;
 import com.bancada.models.Route;
 import com.bancada.models.Subscription;
 import com.bancada.records.InvoicePaidEvent;
 import com.bancada.records.MachineStatusChangedEvent;
-import com.bancada.records.ServerPorts;
 import com.bancada.records.SubscriptionSnapshot;
 import com.bancada.repository.MachineRepository;
 import com.bancada.repository.SubscriptionRepository;
 import com.bancada.request.CancelSubscriptionRequest;
 import com.bancada.request.CheckoutRequest;
-import com.bancada.request.MachinePortRequest;
 import com.bancada.request.MachineReinstallRequest;
 import com.bancada.request.MachineRequest;
 import com.bancada.request.RouteRequest;
@@ -136,7 +132,7 @@ public class SubscriptionService {
     public CheckoutResponse checkout(Long customerId, CheckoutRequest request) {
         Customer customer = customerService.requireActive(customerId);
         Plan plan = planService.requireForSale(request.planId());
-        machineService.validateSystem(plan.getDevice(), request.distribution(), request.version());
+        machineService.validateSystem(request.distribution(), request.version());
         if (subscriptionRepository.existsByCustomerIdAndHostnameAndStatusNot(customerId, request.hostname(), SubscriptionStatus.CANCELED)) {
             throw new DataIntegrityViolationException("Você já tem um servidor chamado " + request.hostname() + ".");
         }
@@ -180,8 +176,8 @@ public class SubscriptionService {
     }
 
     /**
-     * Creates the machine: isolated network, three device ports of its own (SSH, 80, 443) and the
-     * resources of the plan. The subscription becomes active when the machine is running.
+     * Creates the virtual machine with the resources of the plan and a public port for its SSH. The
+     * subscription becomes active when the machine is running.
      */
     public Subscription provision(Long id) {
         Subscription subscription = findById(id);
@@ -192,17 +188,14 @@ public class SubscriptionService {
         }
         Plan plan = subscription.getPlan();
         try {
-            ServerPorts ports = allocatePorts(plan.getDevice().getId(), portalSettingsService.get());
+            int sshPort = allocateSshPort(portalSettingsService.get());
             String password = secretCipherService.decrypt(subscription.getEncryptedPendingPassword());
-            MachineRequest request = new MachineRequest(plan.getDevice().getId(), machineName(subscription), subscription.getDistribution(),
-                subscription.getVersion(), plan.getCpuLimit(), plan.getMemoryMb(), MachineNetworkMode.BRIDGE,
-                List.of(new MachinePortRequest(ports.ssh(), SSH_PORT, "tcp"), new MachinePortRequest(ports.http(), HTTP_PORT, "tcp"),
-                    new MachinePortRequest(ports.https(), HTTPS_PORT, "tcp")),
-                List.of(), subscription.getUsername(), password, true, SSH_PORT, true);
+            MachineRequest request = new MachineRequest(machineName(subscription), subscription.getDistribution(), subscription.getVersion(),
+                (int) Math.ceil(plan.getCpuLimit()), plan.getMemoryMb(), plan.getDiskGb(), null, subscription.getUsername(), password, true);
             MachineCreationResponse created = machineService.create(request);
             Machine machine = machineService.findById(created.machine().id());
             subscription = findById(id);
-            subscription.reserve(machine, ports.ssh(), ports.http(), ports.https(), siteHostname(subscription));
+            subscription.reserve(machine, sshPort, siteHostname(subscription));
         } catch (RuntimeException exception) {
             subscription = findById(id);
             subscription.failProvisioning(exception.getMessage());
@@ -467,15 +460,10 @@ public class SubscriptionService {
         }
     }
 
-    /** Three ports of the customer range free on the device and on this PC (routes, gateway, panels). */
-    private ServerPorts allocatePorts(Long deviceId, PortalSettings settings) {
+    /** A port of the customer range free on this PC (routes, gateway, panels, other customers). */
+    private int allocateSshPort(PortalSettings settings) {
         Set<Integer> taken = new HashSet<>(routeService.takenPublicPorts());
         taken.add(portalPort);
-        for (Machine machine : machineRepository.findByDeviceIdAndStatusNot(deviceId, MachineStatus.REMOVED)) {
-            for (MachinePort port : machine.getPorts()) {
-                taken.add(port.getHostPort());
-            }
-        }
         for (Subscription subscription : subscriptionRepository.findByStatusIn(LIVE)) {
             for (Integer port : new Integer[] {subscription.getSshPort(), subscription.getHttpPort(), subscription.getHttpsPort()}) {
                 if (port != null) {
@@ -483,25 +471,20 @@ public class SubscriptionService {
                 }
             }
         }
-        List<Integer> free = new ArrayList<>();
-        for (int port = settings.getPortRangeStart(); port <= settings.getPortRangeEnd() && free.size() < 3; port++) {
+        for (int port = settings.getPortRangeStart(); port <= settings.getPortRangeEnd(); port++) {
             if (!taken.contains(port)) {
-                free.add(port);
+                return port;
             }
         }
-        if (free.size() < 3) {
-            throw new IllegalStateException("Acabaram as portas da faixa dos clientes. Aumente a faixa nas preferências do painel do cliente.");
-        }
-        return new ServerPorts(free.get(0), free.get(1), free.get(2));
+        throw new IllegalStateException("Acabaram as portas da faixa dos clientes. Aumente a faixa nas preferências do painel do cliente.");
     }
 
-    /** Machine name on the device: customer id plus the chosen name, unique among the machines there. */
+    /** Machine name: customer id plus the chosen name, unique among the machines of this PC. */
     private String machineName(Subscription subscription) {
         String base = "c" + subscription.getCustomer().getId() + "-" + subscription.getHostname();
         String name = base;
         int suffix = 2;
-        Long deviceId = subscription.getPlan().getDevice().getId();
-        while (machineRepository.existsByDeviceIdAndContainerNameAndStatusNot(deviceId, Machine.CONTAINER_PREFIX + name, MachineStatus.REMOVED)) {
+        while (machineRepository.existsByNameAndStatusNot(name, MachineStatus.REMOVED)) {
             name = base + "-" + suffix++;
         }
         return name;

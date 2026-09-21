@@ -1,27 +1,25 @@
 package com.bancada.response;
 
 import com.bancada.enums.MachineDistribution;
-import com.bancada.enums.MachineNetworkMode;
 import com.bancada.enums.MachineStatus;
 import com.bancada.models.Machine;
 import io.swagger.v3.oas.annotations.media.Schema;
 import java.time.LocalDateTime;
-import java.util.List;
 
-@Schema(description = "Máquina Linux")
+@Schema(description = "Máquina virtual Linux deste PC")
 public record MachineResponse(
 
     @Schema(description = "Identificador", example = "1")
     Long id,
 
-    @Schema(description = "Dispositivo onde roda")
+    @Schema(description = "O dispositivo que representa a máquina no painel (terminal, aplicativos, arquivos)")
     DeviceBasicResponse device,
 
-    @Schema(description = "Nome", example = "web-teste")
+    @Schema(description = "Nome", example = "web-1")
     String name,
 
-    @Schema(description = "Nome do contêiner", example = "bancada-web-teste")
-    String containerName,
+    @Schema(description = "Nome da VM no Hyper-V", example = "bancada-web-1")
+    String vmName,
 
     @Schema(description = "Distribuição")
     MachineDistribution distribution,
@@ -32,37 +30,25 @@ public record MachineResponse(
     @Schema(description = "Versão", example = "24.04")
     String version,
 
-    @Schema(description = "Imagem Docker", example = "ubuntu:24.04")
-    String image,
+    @Schema(description = "Processadores virtuais", example = "2")
+    int cpuCount,
 
-    @Schema(description = "Limite de CPUs", example = "1.5")
-    Double cpuLimit,
+    @Schema(description = "Memória em MB", example = "2048")
+    int memoryMb,
 
-    @Schema(description = "Limite de memória em MB", example = "512")
-    Integer memoryLimitMb,
+    @Schema(description = "Disco em GB", example = "20")
+    int diskGb,
 
-    @Schema(description = "Rede")
-    MachineNetworkMode networkMode,
+    @Schema(description = "Disco do PC onde fica", example = "E:\\")
+    String drive,
 
-    @Schema(description = "Descrição da rede", example = "Rede do dispositivo")
-    String networkModeDescription,
+    @Schema(description = "Endereço fixo na rede das máquinas", example = "10.77.0.10")
+    String ipAddress,
 
-    @Schema(description = "Portas encaminhadas")
-    List<MachinePortResponse> ports,
-
-    @Schema(description = "Pastas compartilhadas")
-    List<MachineVolumeResponse> volumes,
-
-    @Schema(description = "Usuário", example = "iuri")
+    @Schema(description = "Usuário com sudo", example = "admin")
     String username,
 
-    @Schema(description = "SSH instalado")
-    boolean sshEnabled,
-
-    @Schema(description = "Porta do SSH dentro da máquina", example = "2201")
-    Integer sshPort,
-
-    @Schema(description = "Liga junto com o dispositivo")
+    @Schema(description = "Liga junto com o PC")
     boolean autoStart,
 
     @Schema(description = "Situação")
@@ -79,12 +65,10 @@ public record MachineResponse(
 ) {
 
     public MachineResponse(Machine machine) {
-        this(machine.getId(), new DeviceBasicResponse(machine.getDevice()), machine.getName(), machine.getContainerName(),
-            machine.getDistribution(), machine.getDistribution().getDisplayName(), machine.getVersion(), machine.getImage(),
-            machine.getCpuLimit(), machine.getMemoryLimitMb(), machine.getNetworkMode(), machine.getNetworkMode().getDescription(),
-            machine.getPorts().stream().map(MachinePortResponse::new).toList(),
-            machine.getVolumes().stream().map(MachineVolumeResponse::new).toList(), machine.getUsername(),
-            machine.isSshEnabled(), machine.getSshPort(), machine.isAutoStart(), machine.getStatus(), machine.getStatus().getDescription(),
+        this(machine.getId(), machine.getDevice() == null ? null : new DeviceBasicResponse(machine.getDevice()), machine.getName(),
+            machine.getVmName(), machine.getDistribution(), machine.getDistribution().getDisplayName(), machine.getVersion(),
+            machine.getCpuCount(), machine.getMemoryMb(), machine.getDiskGb(), machine.getDrive(), machine.getIpAddress(),
+            machine.getUsername(), machine.isAutoStart(), machine.getStatus(), machine.getStatus().getDescription(),
             machine.getCreatedAt(), machine.getUpdatedAt());
     }
 }

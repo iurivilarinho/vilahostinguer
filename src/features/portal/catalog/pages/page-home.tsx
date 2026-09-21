@@ -17,7 +17,7 @@ const FEATURES: { icon: ReactNode; title: string; text: string }[] = [
 ];
 
 const QUESTIONS: { question: string; answer: string }[] = [
-  { question: "Quais sistemas posso usar?", answer: "Ubuntu, Debian, Alpine, Fedora e Rocky Linux, em mais de uma versão. Dá para trocar depois, reinstalando pelo painel." },
+  { question: "Quais sistemas posso usar?", answer: "Ubuntu, Debian, Rocky Linux e AlmaLinux, em mais de uma versão. Dá para trocar depois, reinstalando pelo painel." },
   { question: "Como acesso o servidor?", answer: "Por SSH, com o usuário e a senha que você define na contratação, ou pelo terminal do próprio painel." },
   { question: "E se eu atrasar o pagamento?", answer: "O servidor é desligado alguns dias depois do vencimento e volta assim que a fatura é paga. Depois de mais tempo sem pagamento, ele é apagado." },
   { question: "Posso cancelar quando quiser?", answer: "Sim. O cancelamento vale no fim do período pago, ou na hora, se preferir." },

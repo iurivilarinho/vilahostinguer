@@ -164,11 +164,12 @@ public class Subscription {
     }
 
     /** Ports and site name reserved for the machine about to be created. */
-    public void reserve(Machine machine, int sshPort, int httpPort, int httpsPort, String siteHostname) {
+    /** The virtual machine has an address of its own: only SSH needs a public port (sites go by name). */
+    public void reserve(Machine machine, int sshPort, String siteHostname) {
         this.machine = machine;
         this.sshPort = sshPort;
-        this.httpPort = httpPort;
-        this.httpsPort = httpsPort;
+        this.httpPort = null;
+        this.httpsPort = null;
         this.siteHostname = siteHostname;
         this.provisionError = null;
     }

@@ -11,7 +11,6 @@ import {
   SectionApps,
   SectionBackups,
   SectionFiles,
-  SectionMachines,
   SectionOverview,
   SectionSettings,
   SectionStorage,
@@ -40,7 +39,6 @@ export const AppRouter = () => (
         <Route path="visao-geral" element={<SectionOverview />} />
         <Route path="terminal" element={<SectionTerminal />} />
         <Route path="aplicativos" element={<SectionApps />} />
-        <Route path="maquinas" element={<SectionMachines />} />
         <Route path="arquivos" element={<SectionFiles />} />
         <Route path="backups" element={<SectionBackups />} />
         <Route path="armazenamento" element={<SectionStorage />} />

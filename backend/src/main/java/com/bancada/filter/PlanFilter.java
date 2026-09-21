@@ -11,8 +11,6 @@ public class PlanFilter {
     @Schema(description = "Só os que aparecem na vitrine (verdadeiro) ou só os ocultos (falso)", example = "true")
     private Boolean active;
 
-    @Schema(description = "Dispositivo", example = "1")
-    private Long deviceId;
 
     public String getSearch() {
         return search;
@@ -30,11 +28,4 @@ public class PlanFilter {
         this.active = active;
     }
 
-    public Long getDeviceId() {
-        return deviceId;
-    }
-
-    public void setDeviceId(Long deviceId) {
-        this.deviceId = deviceId;
-    }
 }

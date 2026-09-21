@@ -20,8 +20,6 @@ public record PlanResponse(
     @Schema(description = "Descrição", example = "Para sites e APIs pequenas")
     String description,
 
-    @Schema(description = "Dispositivo onde os servidores são criados")
-    DeviceBasicResponse device,
 
     @Schema(description = "CPUs", example = "1")
     Double cpuLimit,
@@ -64,7 +62,7 @@ public record PlanResponse(
 ) {
 
     public PlanResponse(Plan plan, boolean available, long subscriptionCount) {
-        this(plan.getId(), plan.getName(), plan.getDescription(), new DeviceBasicResponse(plan.getDevice()), plan.getCpuLimit(),
+        this(plan.getId(), plan.getName(), plan.getDescription(), plan.getCpuLimit(),
             plan.getMemoryMb(), plan.getDiskGb(), plan.getBackupSlots(), plan.getPriceMonthly(),
             Arrays.stream(BillingCycle.values()).map(cycle -> new PlanPriceResponse(cycle, plan.getPriceMonthly())).toList(),
             plan.isActive(), plan.isFeatured(), plan.getOrderNumber(), available, subscriptionCount, plan.getCreatedAt(), plan.getUpdatedAt());

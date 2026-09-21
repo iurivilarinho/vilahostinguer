@@ -151,7 +151,7 @@ export const RouteSheet = ({ open, onOpenChange, route, preset }: RouteSheetProp
               <optgroup label="Máquinas">
                 {machines?.data.map((machine) => (
                   <option key={machine.id} value={`machine:${machine.id}`}>
-                    {machine.name} — {machine.device.name}
+                    {machine.name} ({machine.ipAddress})
                   </option>
                 ))}
               </optgroup>
@@ -172,25 +172,17 @@ export const RouteSheet = ({ open, onOpenChange, route, preset }: RouteSheetProp
           >
             <Input id="route-target-port" type="number" inputMode="numeric" {...register("targetPort")} />
           </FieldWrapper>
-          {selectedMachine?.networkMode === "BRIDGE" && (
-            <Typography variant="caption" as="p">
-              Esta máquina está em rede isolada: só as portas encaminhadas chegam até ela (
-              {selectedMachine.ports.map((port) => port.containerPort).join(", ") || "nenhuma"}).
-            </Typography>
-          )}
-          {selectedMachine?.sshEnabled && selectedMachine.sshPort !== null && (
+          {selectedMachine && (
             <Button
               variant="outline"
               size="sm"
               className="self-start"
               onClick={() => {
-                const sshPort = String(selectedMachine.sshPort);
                 setValue("type", "TCP");
-                setValue("targetPort", sshPort);
-                setValue("publicPort", sshPort);
+                setValue("targetPort", "22");
               }}
             >
-              Publicar o SSH (porta {selectedMachine.sshPort})
+              Publicar o SSH da máquina
             </Button>
           )}
           {type === "TCP" && SSH_LIKE_PORTS.includes(targetPort) && (

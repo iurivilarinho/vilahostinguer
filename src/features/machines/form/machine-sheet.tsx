@@ -1,74 +1,47 @@
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Plus, Trash2 } from "lucide-react";
 import { useEffect } from "react";
-import { useFieldArray, useForm } from "react-hook-form";
+import { useForm } from "react-hook-form";
 import { AppSheet, Button, FieldWrapper, Input, Select, Switch, Typography } from "@/components";
-import { useDevicesQuery, type DeviceDto } from "@/features/devices/api";
 import { openOperationViewer } from "@/features/operations";
-import { useCreateMachineMutation, useDistributionsQuery } from "../api";
-import { DEFAULT_MACHINE_FORM_VALUES, machineFormSchema, toOptionalNumber, type MachineFormValues } from "./schema";
+import { formatBytes } from "@/lib/format";
+import { useCreateMachineMutation, useDistributionsQuery, useMachineHostQuery } from "../api";
+import { DEFAULT_MACHINE_FORM_VALUES, machineFormSchema, type MachineFormValues } from "./schema";
 
-const READY_DEVICES_PARAMS = { page: 0, size: 100, filter: { active: true, status: ["READY" as const] } };
+const GIGABYTE = 1024 ** 3;
 
 type MachineSheetProps = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  device?: DeviceDto;
 };
 
-type SwitchRowProps = {
-  id: string;
-  title: string;
-  description: string;
-  checked: boolean;
-  onCheckedChange: (checked: boolean) => void;
-};
-
-const SwitchRow = ({ id, title, description, checked, onCheckedChange }: SwitchRowProps) => (
-  <div className="flex items-start justify-between gap-4 rounded-lg border border-border p-4">
-    <div className="flex flex-col gap-1">
-      <Typography variant="ui-header" as="label" htmlFor={id}>
-        {title}
-      </Typography>
-      <Typography variant="caption" as="p">
-        {description}
-      </Typography>
-    </div>
-    <Switch id={id} checked={checked} onCheckedChange={onCheckedChange} />
-  </div>
-);
-
-export const MachineSheet = ({ open, onOpenChange, device }: MachineSheetProps) => {
+/** Nova máquina virtual neste PC, a partir da imagem oficial da distribuição. */
+export const MachineSheet = ({ open, onOpenChange }: MachineSheetProps) => {
   const {
     register,
-    control,
     handleSubmit,
     reset,
     watch,
     setValue,
+    setError,
     formState: { errors },
   } = useForm<MachineFormValues>({
     resolver: zodResolver(machineFormSchema),
     defaultValues: DEFAULT_MACHINE_FORM_VALUES,
   });
-  const ports = useFieldArray({ control, name: "ports" });
-  const volumes = useFieldArray({ control, name: "volumes" });
-  const deviceId = watch("deviceId");
-  const distribution = watch("distribution");
-  const networkMode = watch("networkMode");
-  const installSsh = watch("installSsh");
-  const { data: devices } = useDevicesQuery(READY_DEVICES_PARAMS, { enabled: open && !device });
-  const { data: distributions } = useDistributionsQuery(deviceId ? Number(deviceId) : undefined, { enabled: open });
+  const { data: host } = useMachineHostQuery({ enabled: open });
+  const { data: distributions } = useDistributionsQuery({ enabled: open });
   const { mutateAsync: createMachine, isPending: isSaving } = useCreateMachineMutation({
     onSuccess: (created) => openOperationViewer(created.operationId),
   });
+  const distribution = watch("distribution");
   const selectedDistribution = distributions?.find((item) => item.key === distribution);
+  const disks = (host?.disks ?? []).filter((disk) => disk.supported);
 
   useEffect(() => {
     if (open) {
-      reset({ ...DEFAULT_MACHINE_FORM_VALUES, deviceId: device ? String(device.id) : "" });
+      reset(DEFAULT_MACHINE_FORM_VALUES);
     }
-  }, [open, device, reset]);
+  }, [open, reset]);
 
   useEffect(() => {
     if (selectedDistribution && !selectedDistribution.versions.includes(watch("version"))) {
@@ -77,22 +50,15 @@ export const MachineSheet = ({ open, onOpenChange, device }: MachineSheetProps) 
   }, [selectedDistribution, setValue, watch]);
 
   const onSubmit = async (values: MachineFormValues) => {
-    await createMachine({
-      deviceId: Number(values.deviceId),
-      name: values.name,
-      distribution: values.distribution,
-      version: values.version,
-      cpuLimit: toOptionalNumber(values.cpuLimit),
-      memoryLimitMb: toOptionalNumber(values.memoryLimitMb),
-      networkMode: values.networkMode,
-      ports: values.networkMode === "BRIDGE" ? values.ports : [],
-      volumes: values.volumes,
-      username: values.username,
-      password: values.password,
-      installSsh: values.installSsh,
-      sshPort: values.installSsh ? toOptionalNumber(values.sshPort) : null,
-      autoStart: values.autoStart,
-    });
+    if (host && values.memoryMb > host.availableMemoryMb) {
+      setError("memoryMb", { type: "validate", message: `Sobram ${host.availableMemoryMb} MB para máquinas neste PC` });
+      return;
+    }
+    if (host && values.cpuCount > host.cpus) {
+      setError("cpuCount", { type: "validate", message: `Este PC tem ${host.cpus} processadores lógicos` });
+      return;
+    }
+    await createMachine({ ...values, drive: values.drive || undefined });
     onOpenChange(false);
   };
 
@@ -100,171 +66,99 @@ export const MachineSheet = ({ open, onOpenChange, device }: MachineSheetProps) 
     <AppSheet
       open={open}
       onOpenChange={onOpenChange}
-      title="Nova máquina Linux"
-      description="Um sistema Linux completo rodando em contêiner Docker, com usuário, sudo e SSH próprios."
-      className="max-w-2xl"
+      title="Nova máquina"
+      description="Uma máquina virtual Linux neste PC (Hyper-V). Ela ganha um endereço fixo e aparece no painel como um servidor a mais."
       footer={
         <>
           <Button variant="outline" onClick={() => onOpenChange(false)} disabled={isSaving}>
             Cancelar
           </Button>
-          <Button type="submit" form="machine-form" loading={isSaving}>
+          <Button type="submit" form="machine-form" loading={isSaving} disabled={host !== undefined && !host.ready}>
             Criar máquina
           </Button>
         </>
       }
     >
-      <form id="machine-form" onSubmit={handleSubmit(onSubmit)} className="flex flex-col gap-6">
-        <section className="flex flex-col gap-4">
-          <Typography variant="section-label">Sistema</Typography>
-          {!device && (
-            <FieldWrapper label="Dispositivo" htmlFor="machine-device" error={errors.deviceId?.message}>
-              <Select id="machine-device" {...register("deviceId")} aria-invalid={Boolean(errors.deviceId)}>
-                <option value="">Escolha</option>
-                {devices?.data.map((item) => (
-                  <option key={item.id} value={String(item.id)} disabled={!item.online}>
-                    {item.name} ({item.architecture ?? "?"}){item.online ? "" : " — desconectado"}
-                  </option>
-                ))}
-              </Select>
-            </FieldWrapper>
-          )}
-          <FieldWrapper label="Nome" htmlFor="machine-name" error={errors.name?.message} description="Vira também o nome do host dentro da máquina">
-            <Input id="machine-name" placeholder="web-teste" {...register("name")} aria-invalid={Boolean(errors.name)} />
-          </FieldWrapper>
-          <div className="grid gap-4 sm:grid-cols-2">
-            <FieldWrapper label="Distribuição" htmlFor="machine-distribution">
-              <Select id="machine-distribution" {...register("distribution")}>
-                {(distributions ?? []).map((item) => (
-                  <option key={item.key} value={item.key} disabled={!item.supported}>
-                    {item.name}
-                    {item.supported ? "" : " (sem imagem para este processador)"}
-                  </option>
-                ))}
-              </Select>
-            </FieldWrapper>
-            <FieldWrapper label="Versão" htmlFor="machine-version" error={errors.version?.message}>
-              <Select id="machine-version" {...register("version")}>
-                {(selectedDistribution?.versions ?? []).map((version) => (
-                  <option key={version} value={version}>
-                    {version}
-                  </option>
-                ))}
-              </Select>
-            </FieldWrapper>
-          </div>
-        </section>
+      <form id="machine-form" onSubmit={handleSubmit(onSubmit)} className="flex flex-col gap-4">
+        <FieldWrapper label="Nome" htmlFor="machine-name" error={errors.name?.message} description="Vira o nome da máquina na rede (hostname).">
+          <Input id="machine-name" placeholder="web-1" autoComplete="off" {...register("name")} aria-invalid={Boolean(errors.name)} />
+        </FieldWrapper>
 
-        <section className="flex flex-col gap-4">
-          <Typography variant="section-label">Recursos</Typography>
-          <div className="grid gap-4 sm:grid-cols-2">
-            <FieldWrapper label="Limite de CPUs" htmlFor="machine-cpu" error={errors.cpuLimit?.message} description="Vazio = sem limite. Ex.: 0.5, 1, 2">
-              <Input id="machine-cpu" type="number" step="0.1" inputMode="decimal" {...register("cpuLimit")} />
-            </FieldWrapper>
-            <FieldWrapper label="Limite de memória (MB)" htmlFor="machine-memory" error={errors.memoryLimitMb?.message} description="Vazio = sem limite">
-              <Input id="machine-memory" type="number" inputMode="numeric" {...register("memoryLimitMb")} />
-            </FieldWrapper>
-          </div>
-        </section>
-
-        <section className="flex flex-col gap-4">
-          <Typography variant="section-label">Rede</Typography>
-          <FieldWrapper
-            label="Tipo de rede"
-            htmlFor="machine-network"
-            description={
-              networkMode === "HOST"
-                ? "Usa a rede do dispositivo: os serviços da máquina respondem direto no IP dele. Obrigatório quando a internet do dispositivo vem por proxy local, como no celular."
-                : "Rede isolada: só as portas encaminhadas abaixo ficam acessíveis pelo IP do dispositivo."
-            }
-          >
-            <Select id="machine-network" {...register("networkMode")}>
-              <option value="HOST">Rede do dispositivo</option>
-              <option value="BRIDGE">Isolada, com portas encaminhadas</option>
+        <div className="grid gap-4 sm:grid-cols-2">
+          <FieldWrapper label="Distribuição" htmlFor="machine-distribution">
+            <Select id="machine-distribution" {...register("distribution")}>
+              {(distributions ?? []).map((item) => (
+                <option key={item.key} value={item.key}>
+                  {item.name}
+                </option>
+              ))}
             </Select>
           </FieldWrapper>
-          {networkMode === "BRIDGE" && (
-            <div className="flex flex-col gap-2">
-              {ports.fields.map((field, index) => (
-                <div key={field.id} className="grid grid-cols-[1fr_1fr_6rem_auto] items-end gap-2">
-                  <FieldWrapper label="Porta no dispositivo" htmlFor={`port-host-${index}`} error={errors.ports?.[index]?.hostPort?.message}>
-                    <Input id={`port-host-${index}`} type="number" {...register(`ports.${index}.hostPort`)} />
-                  </FieldWrapper>
-                  <FieldWrapper label="Porta na máquina" htmlFor={`port-container-${index}`} error={errors.ports?.[index]?.containerPort?.message}>
-                    <Input id={`port-container-${index}`} type="number" {...register(`ports.${index}.containerPort`)} />
-                  </FieldWrapper>
-                  <FieldWrapper label="Protocolo" htmlFor={`port-protocol-${index}`}>
-                    <Select id={`port-protocol-${index}`} {...register(`ports.${index}.protocol`)}>
-                      <option value="tcp">tcp</option>
-                      <option value="udp">udp</option>
-                    </Select>
-                  </FieldWrapper>
-                  <Button variant="ghost" size="icon" onClick={() => ports.remove(index)} aria-label="Remover porta">
-                    <Trash2 />
-                  </Button>
-                </div>
+          <FieldWrapper label="Versão" htmlFor="machine-version" error={errors.version?.message}>
+            <Select id="machine-version" {...register("version")}>
+              {(selectedDistribution?.versions ?? []).map((version) => (
+                <option key={version} value={version}>
+                  {version}
+                </option>
               ))}
-              <Button variant="outline" size="sm" className="self-start" onClick={() => ports.append({ hostPort: 8080, containerPort: 80, protocol: "tcp" })}>
-                <Plus />
-                Encaminhar porta
-              </Button>
-            </div>
-          )}
-        </section>
+            </Select>
+          </FieldWrapper>
+        </div>
 
-        <section className="flex flex-col gap-4">
-          <Typography variant="section-label">Pastas compartilhadas</Typography>
-          {volumes.fields.map((field, index) => (
-            <div key={field.id} className="grid grid-cols-[1fr_1fr_auto] items-end gap-2">
-              <FieldWrapper label="Pasta no dispositivo" htmlFor={`volume-host-${index}`} error={errors.volumes?.[index]?.hostPath?.message}>
-                <Input id={`volume-host-${index}`} className="font-mono" {...register(`volumes.${index}.hostPath`)} />
-              </FieldWrapper>
-              <FieldWrapper label="Na máquina" htmlFor={`volume-container-${index}`} error={errors.volumes?.[index]?.containerPath?.message}>
-                <Input id={`volume-container-${index}`} className="font-mono" {...register(`volumes.${index}.containerPath`)} />
-              </FieldWrapper>
-              <Button variant="ghost" size="icon" onClick={() => volumes.remove(index)} aria-label="Remover pasta">
-                <Trash2 />
-              </Button>
-            </div>
-          ))}
-          <Button variant="outline" size="sm" className="self-start" onClick={() => volumes.append({ hostPath: "/srv/dados", containerPath: "/dados" })}>
-            <Plus />
-            Compartilhar pasta
-          </Button>
-        </section>
+        <div className="grid gap-4 sm:grid-cols-3">
+          <FieldWrapper label="Processadores" htmlFor="machine-cpus" error={errors.cpuCount?.message} description={host ? `O PC tem ${host.cpus}` : undefined}>
+            <Input id="machine-cpus" type="number" min={1} max={host?.cpus} {...register("cpuCount")} aria-invalid={Boolean(errors.cpuCount)} />
+          </FieldWrapper>
+          <FieldWrapper
+            label="Memória (MB)"
+            htmlFor="machine-memory"
+            error={errors.memoryMb?.message}
+            description={host ? `Sobram ${host.availableMemoryMb} MB` : undefined}
+          >
+            <Input id="machine-memory" type="number" min={512} step={256} {...register("memoryMb")} aria-invalid={Boolean(errors.memoryMb)} />
+          </FieldWrapper>
+          <FieldWrapper label="Disco (GB)" htmlFor="machine-disk" error={errors.diskGb?.message}>
+            <Input id="machine-disk" type="number" min={10} {...register("diskGb")} aria-invalid={Boolean(errors.diskGb)} />
+          </FieldWrapper>
+        </div>
 
-        <section className="flex flex-col gap-4">
-          <Typography variant="section-label">Acesso</Typography>
-          <div className="grid gap-4 sm:grid-cols-2">
-            <FieldWrapper label="Usuário" htmlFor="machine-user" error={errors.username?.message}>
-              <Input id="machine-user" autoComplete="off" {...register("username")} aria-invalid={Boolean(errors.username)} />
-            </FieldWrapper>
-            <FieldWrapper label="Senha (também do sudo)" htmlFor="machine-password" error={errors.password?.message}>
-              <Input id="machine-password" type="password" autoComplete="new-password" {...register("password")} aria-invalid={Boolean(errors.password)} />
-            </FieldWrapper>
+        <FieldWrapper label="Disco do PC onde a máquina fica" htmlFor="machine-drive" description="O disco da máquina cresce conforme ela grava; o tamanho todo fica reservado.">
+          <Select id="machine-drive" {...register("drive")}>
+            <option value="">O que tiver mais espaço</option>
+            {disks.map((disk) => (
+              <option key={disk.root} value={disk.root} disabled={disk.availableBytes < GIGABYTE * 10}>
+                {disk.root} {disk.label ? `${disk.label} ` : ""}— {formatBytes(disk.availableBytes)} disponíveis
+              </option>
+            ))}
+          </Select>
+        </FieldWrapper>
+
+        <div className="grid gap-4 sm:grid-cols-2">
+          <FieldWrapper label="Usuário (com sudo)" htmlFor="machine-user" error={errors.username?.message}>
+            <Input id="machine-user" placeholder="admin" autoComplete="off" {...register("username")} aria-invalid={Boolean(errors.username)} />
+          </FieldWrapper>
+          <FieldWrapper label="Senha (SSH e sudo)" htmlFor="machine-password" error={errors.password?.message}>
+            <Input id="machine-password" type="password" autoComplete="new-password" {...register("password")} aria-invalid={Boolean(errors.password)} />
+          </FieldWrapper>
+        </div>
+
+        <div className="flex items-start justify-between gap-4 rounded-lg border border-border p-4">
+          <div className="flex flex-col gap-1">
+            <Typography variant="ui-header" as="label" htmlFor="machine-autostart">
+              Ligar junto com o PC
+            </Typography>
+            <Typography variant="caption" as="p">
+              Quando o Windows inicia, o Hyper-V liga a máquina sozinho.
+            </Typography>
           </div>
-          <SwitchRow
-            id="machine-ssh"
-            title="Instalar SSH"
-            description="Permite entrar na máquina direto, sem passar pelo painel."
-            checked={installSsh}
-            onCheckedChange={(value) => setValue("installSsh", value)}
-          />
-          {installSsh && (
-            <FieldWrapper label="Porta do SSH" htmlFor="machine-ssh-port" error={errors.sshPort?.message} className="max-w-xs">
-              <Input id="machine-ssh-port" type="number" inputMode="numeric" {...register("sshPort")} />
-            </FieldWrapper>
-          )}
-          <SwitchRow
-            id="machine-autostart"
-            title="Ligar junto com o dispositivo"
-            description="A máquina volta sozinha depois que o dispositivo reinicia."
-            checked={watch("autoStart")}
-            onCheckedChange={(value) => setValue("autoStart", value)}
-          />
-        </section>
+          <Switch id="machine-autostart" checked={watch("autoStart")} onCheckedChange={(value) => setValue("autoStart", value)} />
+        </div>
+
+        <Typography variant="caption" as="p">
+          A primeira máquina de cada versão baixa a imagem oficial da distribuição (de 300 a 700 MB) e confere o checksum; as próximas só
+          copiam. O painel entra na máquina como root com uma chave própria, para terminal, aplicativos e backups.
+        </Typography>
       </form>
     </AppSheet>
   );
 };
-

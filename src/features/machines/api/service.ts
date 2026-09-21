@@ -11,11 +11,11 @@ import { toPageParams } from "@/lib/api/utils/to-page-params";
 import { machineKeys } from "./keys";
 import type {
   DistributionDto,
-  DockerStatusDto,
   GetMachinesParams,
   MachineActionRequest,
   MachineBackupRequest,
   MachineCreationDto,
+  MachineHostDto,
   MachineDto,
   MachineLogsDto,
   MachineReinstallRequest,
@@ -32,18 +32,18 @@ const getMachines = async (params?: GetMachinesParams): Promise<PaginatedApiResp
   return normalizeSpringPage(data);
 };
 
-const getDockerStatus = async (deviceId: number): Promise<DockerStatusDto> => {
-  const { data } = await api.get<DockerStatusDto>(`/devices/${deviceId}/docker`);
+const getMachineHost = async (): Promise<MachineHostDto> => {
+  const { data } = await api.get<MachineHostDto>("/machines/host");
   return data;
 };
 
-const getDistributions = async (deviceId: number): Promise<DistributionDto[]> => {
-  const { data } = await api.get<DistributionDto[]>(`/devices/${deviceId}/machine-distributions`);
+const getDistributions = async (): Promise<DistributionDto[]> => {
+  const { data } = await api.get<DistributionDto[]>("/machines/distributions");
   return data;
 };
 
-const getMachineStats = async (deviceId: number): Promise<MachineStatsDto[]> => {
-  const { data } = await api.get<MachineStatsDto[]>(`/devices/${deviceId}/machine-stats`);
+const getMachineStats = async (): Promise<MachineStatsDto[]> => {
+  const { data } = await api.get<MachineStatsDto[]>("/machines/stats");
   return data;
 };
 
@@ -67,9 +67,6 @@ const removeMachine = async (id: number): Promise<OperationDto> => {
   return data;
 };
 
-const syncMachines = async (deviceId: number): Promise<void> => {
-  await api.post(`/devices/${deviceId}/machines/sync`);
-};
 
 /** Enquanto alguma máquina estiver sendo criada, a lista se atualiza sozinha. */
 export const useMachinesQuery = (params?: GetMachinesParams, options?: QueryOptions<PaginatedApiResponse<MachineDto>>) =>
@@ -80,29 +77,27 @@ export const useMachinesQuery = (params?: GetMachinesParams, options?: QueryOpti
     ...options,
   });
 
-export const useDockerStatusQuery = (deviceId?: number, options?: QueryOptions<DockerStatusDto>) =>
+/** Hyper-V, rede, processadores, memória e discos deste PC para as máquinas. */
+export const useMachineHostQuery = (options?: QueryOptions<MachineHostDto>) =>
   useQuery({
-    queryKey: machineKeys.docker(deviceId ?? 0),
-    queryFn: () => getDockerStatus(deviceId ?? 0),
-    enabled: deviceId !== undefined && (options?.enabled ?? true),
-    retry: false,
+    queryKey: machineKeys.host(),
+    queryFn: getMachineHost,
+    refetchInterval: 30_000,
     ...options,
   });
 
-export const useDistributionsQuery = (deviceId?: number, options?: QueryOptions<DistributionDto[]>) =>
+export const useDistributionsQuery = (options?: QueryOptions<DistributionDto[]>) =>
   useQuery({
-    queryKey: machineKeys.distributions(deviceId ?? 0),
-    queryFn: () => getDistributions(deviceId ?? 0),
-    enabled: deviceId !== undefined && (options?.enabled ?? true),
+    queryKey: machineKeys.distributions(),
+    queryFn: getDistributions,
     staleTime: Infinity,
     ...options,
   });
 
-export const useMachineStatsQuery = (deviceId?: number, options?: QueryOptions<MachineStatsDto[]>) =>
+export const useMachineStatsQuery = (options?: QueryOptions<MachineStatsDto[]>) =>
   useQuery({
-    queryKey: machineKeys.stats(deviceId ?? 0),
-    queryFn: () => getMachineStats(deviceId ?? 0),
-    enabled: deviceId !== undefined && (options?.enabled ?? true),
+    queryKey: machineKeys.stats(),
+    queryFn: getMachineStats,
     refetchInterval: LIVE_REFRESH_MS,
     retry: false,
     ...options,
@@ -230,15 +225,3 @@ export const useRestoreMachineMutation = (options?: MutationOptions<OperationDto
 export const useReinstallMachineMutation = (options?: MutationOptions<OperationDto, MachineReinstallRequest>) =>
   useMaintenanceMutation(reinstallMachine, (data) => `${data.title}: iniciado`, "Não foi possível reinstalar a máquina", options);
 
-/** Relê no Docker a situação real das máquinas (alguém pode ter parado um contêiner por fora). */
-export const useSyncMachinesMutation = (options?: MutationOptions<void, number>) => {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: syncMachines,
-    onSuccess: (data, variables) => {
-      queryClient.invalidateQueries({ queryKey: machineKeys.lists() });
-      options?.onSuccess?.(data, variables);
-    },
-    onError: (error) => options?.onError?.(error),
-  });
-};

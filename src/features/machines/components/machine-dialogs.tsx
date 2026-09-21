@@ -8,13 +8,13 @@ type MachineDialogProps = {
   onClose: () => void;
 };
 
-/** Terminal dentro da máquina (docker exec). Fechar encerra o shell. */
+/** Terminal como root na máquina (SSH). Fechar encerra o shell. */
 export const MachineTerminalDialog = ({ machine, onClose }: MachineDialogProps) => (
   <Dialog
     open={machine !== null}
     onOpenChange={(open) => !open && onClose()}
     title={machine ? `Terminal — ${machine.name}` : "Terminal"}
-    description={machine ? `${machine.distributionName} ${machine.version} em ${machine.device.name}` : undefined}
+    description={machine ? `${machine.distributionName} ${machine.version} em ${machine.ipAddress}` : undefined}
     className="max-w-5xl"
   >
     {machine && <TerminalView machineId={machine.id} className="h-[60vh]" />}
@@ -28,7 +28,7 @@ export const MachineLogsDialog = ({ machine, onClose }: MachineDialogProps) => {
       open={machine !== null}
       onOpenChange={(open) => !open && onClose()}
       title={machine ? `Saída de ${machine.name}` : "Saída"}
-      description="Últimas linhas que os processos principais da máquina escreveram."
+      description="Últimas linhas do registro do sistema (journalctl)."
       className="max-w-3xl"
       footer={
         <>

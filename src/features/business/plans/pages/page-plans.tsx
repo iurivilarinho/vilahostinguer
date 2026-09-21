@@ -59,7 +59,6 @@ export const PagePlans = () => {
                 <TableRow>
                   <TableHead>Plano</TableHead>
                   <TableHead>Recursos</TableHead>
-                  <TableHead>Dispositivo</TableHead>
                   <TableHead>Mensal</TableHead>
                   <TableHead>Vendas</TableHead>
                   <TableHead>Situação</TableHead>
@@ -79,11 +78,8 @@ export const PagePlans = () => {
                     </TableCell>
                     <TableCell>
                       <Typography variant="body-sm">
-                        {plan.cpuLimit} CPU · {plan.memoryMb} MB · {plan.diskGb} GB · {plan.backupSlots} backups
+                        {plan.cpuLimit} {plan.cpuLimit === 1 ? "processador" : "processadores"} · {plan.memoryMb} MB · {plan.diskGb} GB · {plan.backupSlots} backups
                       </Typography>
-                    </TableCell>
-                    <TableCell>
-                      <Typography variant="body-sm">{plan.device.name}</Typography>
                     </TableCell>
                     <TableCell>
                       <Typography variant="body-sm" className="font-semibold">

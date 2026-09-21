@@ -1,8 +1,11 @@
 package com.bancada.service;
 
+import com.bancada.enums.MachineStatus;
 import com.bancada.enums.VolumeStatus;
+import com.bancada.models.Machine;
 import com.bancada.models.Volume;
 import com.bancada.nbd.VolumeImage;
+import com.bancada.repository.MachineRepository;
 import com.bancada.repository.VolumeRepository;
 import com.bancada.response.HostDiskResponse;
 import java.io.IOException;
@@ -18,7 +21,7 @@ import java.util.Set;
 import org.springframework.stereotype.Service;
 
 /**
- * The disks of this PC and how much of each the virtual disks already promised. A virtual disk is a
+ * The disks of this PC and how much of each the virtual disks and machines already promised. A virtual disk is a
  * sparse file: it takes space as the device writes. What is still to be written stays reserved, so
  * the sum of the promises never passes the free space and the device never meets a full PC disk.
  */
@@ -31,16 +34,19 @@ public class HostDiskService {
     private static final Set<String> SPARSE_FILE_SYSTEMS = Set.of("NTFS", "REFS");
 
     private final VolumeRepository volumeRepository;
+    private final MachineRepository machineRepository;
 
-    public HostDiskService(VolumeRepository volumeRepository) {
+    public HostDiskService(VolumeRepository volumeRepository, MachineRepository machineRepository) {
         this.volumeRepository = volumeRepository;
+        this.machineRepository = machineRepository;
     }
 
     public List<HostDiskResponse> list() {
         List<Volume> volumes = volumeRepository.findByStatusNot(VolumeStatus.DELETED);
+        List<Machine> machines = machineRepository.findByStatusNot(MachineStatus.REMOVED);
         List<HostDiskResponse> disks = new ArrayList<>();
         for (Path root : FileSystems.getDefault().getRootDirectories()) {
-            HostDiskResponse disk = describe(root, volumes);
+            HostDiskResponse disk = describe(root, volumes, machines);
             if (disk != null) {
                 disks.add(disk);
             }
@@ -65,11 +71,21 @@ public class HostDiskService {
         return disk;
     }
 
+    /** The PC disk with the most room that fits {@code sizeBytes}. */
+    public HostDiskResponse roomiest(long sizeBytes) {
+        return list().stream()
+            .filter(HostDiskResponse::supported)
+            .max((first, second) -> Long.compare(first.availableBytes(), second.availableBytes()))
+            .filter(disk -> disk.availableBytes() >= sizeBytes)
+            .orElseThrow(() -> new IllegalStateException("Nenhum disco NTFS deste PC tem " + gigabytes(sizeBytes)
+                + " livres para isso (descontando o que já foi prometido e a folga de " + gigabytes(MARGIN_BYTES) + ")."));
+    }
+
     public static Path folderOf(String root) {
         return Paths.get(root, FOLDER);
     }
 
-    private HostDiskResponse describe(Path root, List<Volume> volumes) {
+    private HostDiskResponse describe(Path root, List<Volume> volumes, List<Machine> machines) {
         FileStore store;
         long total;
         long free;
@@ -91,6 +107,13 @@ public class HostDiskService {
             if (volume.getDrive().equalsIgnoreCase(rootText)) {
                 allocated += volume.getSizeBytes();
                 reserved += volume.getSizeBytes() - VolumeImage.writtenBytes(Paths.get(volume.getFilePath()), volume.getSizeBytes());
+            }
+        }
+        // a machine disk is a dynamic VHDX: it grows up to its size, so what it has not taken yet is promised
+        for (Machine machine : machines) {
+            if (machine.getDrive().equalsIgnoreCase(rootText)) {
+                allocated += machine.diskBytes();
+                reserved += Math.max(0, machine.diskBytes() - HyperVService.diskFileSize(machine.diskPath()));
             }
         }
         String fileSystem = store.type();

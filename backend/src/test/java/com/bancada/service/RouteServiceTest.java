@@ -13,7 +13,7 @@ import static org.mockito.Mockito.when;
 import com.bancada.enums.ConnectionType;
 import com.bancada.enums.DnsProvider;
 import com.bancada.enums.MachineDistribution;
-import com.bancada.enums.MachineNetworkMode;
+import com.bancada.enums.ConnectionType;
 import com.bancada.enums.MachineStatus;
 import com.bancada.enums.RouteStatus;
 import com.bancada.enums.RouteType;
@@ -27,7 +27,6 @@ import com.bancada.records.RoutesChangedEvent;
 import com.bancada.repository.DomainRepository;
 import com.bancada.repository.RouteRepository;
 import com.bancada.request.DomainRequest;
-import com.bancada.request.MachinePortRequest;
 import com.bancada.request.MachineRequest;
 import com.bancada.request.RouteRequest;
 import java.util.List;
@@ -83,10 +82,12 @@ class RouteServiceTest {
         when(domainRepository.findByActiveTrue()).thenReturn(List.of());
     }
 
-    private Machine machine(MachineNetworkMode network) {
-        MachineRequest request = new MachineRequest(1L, "web", MachineDistribution.DEBIAN, "12", null, null, network,
-            List.of(new MachinePortRequest(8080, 80, "tcp")), List.of(), "iuri", "segredo", true, 2201, true);
-        Machine machine = new Machine(request, phone);
+    /** A virtual machine of the PC: its own device, with its own address on the machine network. */
+    private Machine machine() {
+        MachineRequest request = new MachineRequest("web", MachineDistribution.DEBIAN, "12", 2, 2048, 20, "D:\\", "iuri", "segredo", true);
+        Machine machine = new Machine(request, "D:\\", "10.77.0.10", "00:15:5D:4D:00:0A");
+        Device vm = new Device("10.77.0.10", 22, "SHA256:vm", "ssh-rsa", ConnectionType.VIRTUAL, "Hyper-V");
+        machine.attachDevice(vm, null);
         machine.changeStatus(MachineStatus.RUNNING);
         return machine;
     }
@@ -123,26 +124,23 @@ class RouteServiceTest {
     }
 
     @Test
-    void isolatedMachineOnlyExposesMappedPortsAndResolvesToTheDevicePort() {
-        Machine isolated = machine(MachineNetworkMode.BRIDGE);
-        when(machineService.findById(3L)).thenReturn(isolated);
-
-        assertThrows(IllegalArgumentException.class,
-            () -> routeService.create(new RouteRequest(RouteType.HTTP, "web.exemplo.com", null, null, 3L, 443, null)));
+    void machineRouteGoesStraightToTheAddressAndPortOfTheVirtualMachine() {
+        Machine machine = machine();
+        when(machineService.findById(3L)).thenReturn(machine);
 
         Route route = routeService.create(new RouteRequest(RouteType.HTTP, "web.exemplo.com", null, null, 3L, 80, null));
         when(routeRepository.findByStatus(RouteStatus.ACTIVE)).thenReturn(List.of(route));
         List<RouteTarget> targets = routeService.activeTargets();
 
-        assertEquals(phone, route.getDevice());
+        assertEquals(machine.getDevice(), route.getDevice());
         assertEquals(1, targets.size());
-        assertEquals("169.254.1.1", targets.get(0).host());
-        assertEquals(8080, targets.get(0).port(), "container port 80 answers on device port 8080");
+        assertEquals("10.77.0.10", targets.get(0).host());
+        assertEquals(80, targets.get(0).port());
     }
 
     @Test
     void routesToRemovedMachinesAreLeftOutOfTheGateway() {
-        Machine hostNetwork = machine(MachineNetworkMode.HOST);
+        Machine hostNetwork = machine();
         when(machineService.findById(3L)).thenReturn(hostNetwork);
         Route route = routeService.create(new RouteRequest(RouteType.TCP, null, 2201, null, 3L, 2201, "SSH"));
         hostNetwork.changeStatus(MachineStatus.REMOVED);

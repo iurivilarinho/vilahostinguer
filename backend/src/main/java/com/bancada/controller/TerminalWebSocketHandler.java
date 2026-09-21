@@ -31,11 +31,10 @@ public class TerminalWebSocketHandler extends ShellWebSocketHandler {
     @Override
     protected ShellSession open(WebSocketSession session, Map<String, String> query, int columns, int rows) throws JSchException {
         if (query.containsKey("machineId")) {
-            // Terminal inside a machine: docker exec with a PTY on the device that hosts it.
+            // a machine is a device of its own: its terminal is a root shell on it
             Machine machine = machineService.findById(Long.parseLong(query.get("machineId")));
             Device device = deviceService.requireReady(machine.getDevice().getId());
-            return new ShellSession(sshService.openCommandPty(device, machineService.shellCommand(machine), true, columns, rows),
-                "terminal-machine-" + machine.getId());
+            return new ShellSession(sshService.openShell(device, columns, rows), "terminal-machine-" + machine.getId());
         }
         Device device = deviceService.requireReady(Long.parseLong(query.getOrDefault("deviceId", "")));
         return new ShellSession(sshService.openShell(device, columns, rows), "terminal-" + device.getId());

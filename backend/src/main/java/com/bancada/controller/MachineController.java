@@ -8,7 +8,10 @@ import com.bancada.request.MachineRequest;
 import com.bancada.request.MachineRestoreRequest;
 import com.bancada.response.BackupResponse;
 import com.bancada.response.MachineCreationResponse;
+import com.bancada.response.DistributionResponse;
+import com.bancada.response.MachineHostResponse;
 import com.bancada.response.MachineLogsResponse;
+import com.bancada.response.MachineStatsResponse;
 import com.bancada.response.MachineResponse;
 import com.bancada.response.OperationResponse;
 import com.bancada.service.MachineMaintenanceService;
@@ -17,6 +20,7 @@ import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
+import java.util.List;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.http.HttpStatus;
@@ -48,6 +52,27 @@ public class MachineController {
     @GetMapping
     public ResponseEntity<Page<MachineResponse>> list(MachineFilter filter, Pageable pageable) {
         return ResponseEntity.ok(machineService.search(filter, pageable).map(MachineResponse::new));
+    }
+
+    @Operation(summary = "Este PC como anfitrião: Hyper-V, rede, processadores, memória e discos livres para máquinas")
+    @ApiResponse(responseCode = "200", description = "Situação do anfitrião")
+    @GetMapping("/host")
+    public ResponseEntity<MachineHostResponse> host() {
+        return ResponseEntity.ok(machineService.host());
+    }
+
+    @Operation(summary = "Distribuições e versões oferecidas")
+    @ApiResponse(responseCode = "200", description = "Distribuições")
+    @GetMapping("/distributions")
+    public ResponseEntity<List<DistributionResponse>> distributions() {
+        return ResponseEntity.ok(machineService.distributions());
+    }
+
+    @Operation(summary = "Uso de CPU e memória de cada máquina ligada")
+    @ApiResponse(responseCode = "200", description = "Uso das máquinas")
+    @GetMapping("/stats")
+    public ResponseEntity<List<MachineStatsResponse>> stats() {
+        return ResponseEntity.ok(machineService.stats());
     }
 
     @Operation(summary = "Busca uma máquina")

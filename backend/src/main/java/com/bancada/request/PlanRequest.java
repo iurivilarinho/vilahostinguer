@@ -23,20 +23,15 @@ public record PlanRequest(
     @Size(max = 300, message = "Até 300 caracteres")
     String description,
 
-    @Schema(description = "Dispositivo onde os servidores deste plano são criados", example = "1",
-        requiredMode = Schema.RequiredMode.REQUIRED)
-    @NotNull(message = "Escolha o dispositivo")
-    Long deviceId,
-
-    @Schema(description = "CPUs", example = "1", requiredMode = Schema.RequiredMode.REQUIRED)
+    @Schema(description = "Processadores virtuais da máquina (arredondado para cima)", example = "1", requiredMode = Schema.RequiredMode.REQUIRED)
     @NotNull(message = "Informe as CPUs")
-    @DecimalMin(value = "0.1", message = "Mínimo de 0,1 CPU")
+    @DecimalMin(value = "1", message = "Mínimo de 1 CPU")
     @DecimalMax(value = "64", message = "Máximo de 64 CPUs")
     Double cpuLimit,
 
     @Schema(description = "Memória em MB", example = "512", requiredMode = Schema.RequiredMode.REQUIRED)
     @NotNull(message = "Informe a memória")
-    @Min(value = 64, message = "Mínimo de 64 MB")
+    @Min(value = 512, message = "Mínimo de 512 MB")
     @Max(value = 262_144, message = "Máximo de 256 GB")
     Integer memoryMb,
 

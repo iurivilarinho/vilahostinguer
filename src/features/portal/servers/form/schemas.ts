@@ -2,7 +2,7 @@ import { z } from "zod";
 
 export const reinstallSchema = z
   .object({
-    distribution: z.enum(["UBUNTU", "DEBIAN", "ALPINE", "FEDORA", "ROCKY", "ARCH"]),
+    distribution: z.enum(["UBUNTU", "DEBIAN", "ROCKY", "ALMA"]),
     version: z.string().min(1, "Escolha a versão"),
     password: z.string().min(8, "Use ao menos 8 caracteres").max(128, "Até 128 caracteres"),
     confirmation: z.string(),

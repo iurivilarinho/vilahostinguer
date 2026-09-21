@@ -3,7 +3,7 @@ import { z } from "zod";
 export const checkoutSchema = z
   .object({
     cycle: z.enum(["MONTHLY", "QUARTERLY", "SEMIANNUAL", "ANNUAL"]),
-    distribution: z.enum(["UBUNTU", "DEBIAN", "ALPINE", "FEDORA", "ROCKY", "ARCH"]),
+    distribution: z.enum(["UBUNTU", "DEBIAN", "ROCKY", "ALMA"]),
     version: z.string().min(1, "Escolha a versão"),
     hostname: z
       .string()

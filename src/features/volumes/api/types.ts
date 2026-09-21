@@ -1,5 +1,5 @@
 import type { DeviceBasicDto } from "@/features/devices/api";
-import type { MachineNetworkMode, MachineStatus } from "@/features/machines/api";
+import type { MachineStatus } from "@/features/machines/api";
 import type { ApiRequestParams } from "@/lib/api/types";
 
 export type VolumeStatus = "AVAILABLE" | "ATTACHING" | "ATTACHED" | "WAITING" | "DETACHING" | "FAILED" | "DELETED";
@@ -7,7 +7,7 @@ export type VolumeStatus = "AVAILABLE" | "ATTACHING" | "ATTACHED" | "WAITING" | 
 export type VolumeMachineDto = {
   id: number;
   name: string;
-  networkMode: MachineNetworkMode;
+  ipAddress: string;
   status: MachineStatus;
 };
 

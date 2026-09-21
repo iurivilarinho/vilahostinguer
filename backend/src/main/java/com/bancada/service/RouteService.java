@@ -1,7 +1,6 @@
 package com.bancada.service;
 
 import com.bancada.enums.DeviceEventType;
-import com.bancada.enums.MachineNetworkMode;
 import com.bancada.enums.MachineStatus;
 import com.bancada.enums.RouteStatus;
 import com.bancada.enums.RouteType;
@@ -10,7 +9,6 @@ import com.bancada.models.AppSettings;
 import com.bancada.models.Device;
 import com.bancada.models.Domain;
 import com.bancada.models.Machine;
-import com.bancada.models.MachinePort;
 import com.bancada.models.Route;
 import com.bancada.records.RouteTarget;
 import com.bancada.records.RoutesChangedEvent;
@@ -24,7 +22,6 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashSet;
 import java.util.List;
-import java.util.Optional;
 import java.util.Set;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -188,15 +185,9 @@ public class RouteService {
             if (!device.isActive() || (machine != null && machine.getStatus() == MachineStatus.REMOVED)) {
                 continue;
             }
-            Optional<Integer> port = devicePort(machine, route.getTargetPort());
-            if (port.isEmpty()) {
-                LOG.warn("Route {} skipped: port {} of machine {} is not mapped to the device", route.getId(), route.getTargetPort(),
-                    machine.getName());
-                continue;
-            }
             String label = machine != null ? "A máquina " + machine.getName() : "O dispositivo " + device.getName();
             targets.add(new RouteTarget(route.getId(), route.getType(), route.getHostname(), route.getPublicPort(), device.getHost(),
-                port.get(), label));
+                route.getTargetPort(), label));
         }
         return targets;
     }
@@ -243,22 +234,8 @@ public class RouteService {
         if (machine.getStatus() == MachineStatus.REMOVED) {
             throw new IllegalStateException("A máquina " + machine.getName() + " foi removida.");
         }
-        if (devicePort(machine, request.targetPort()).isEmpty()) {
-            throw new IllegalArgumentException("A porta " + request.targetPort() + " da máquina " + machine.getName()
-                + " não está encaminhada para o dispositivo. Máquinas em rede isolada só expõem as portas encaminhadas.");
-        }
+        // a machine is a virtual machine with an address of its own: the route goes straight to it
         return machine.getDevice();
-    }
-
-    /** Port that answers on the device: the same one, or the one mapped to it for an isolated machine. */
-    private static Optional<Integer> devicePort(Machine machine, int targetPort) {
-        if (machine == null || machine.getNetworkMode() == MachineNetworkMode.HOST) {
-            return Optional.of(targetPort);
-        }
-        return machine.getPorts().stream()
-            .filter(port -> port.getContainerPort() == targetPort && "tcp".equalsIgnoreCase(port.getProtocol()))
-            .map(MachinePort::getHostPort)
-            .findFirst();
     }
 
     private Domain coveringDomain(String hostname) {

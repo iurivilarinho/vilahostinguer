@@ -1,21 +1,4 @@
-import {
-  Activity,
-  Archive,
-  Boxes,
-  ArchiveRestore,
-  Cable,
-  FolderOpen,
-  HardDrive,
-  LayoutDashboard,
-  MoreHorizontal,
-  Network,
-  Package,
-  RefreshCw,
-  Server,
-  Settings,
-  SquareTerminal,
-  DatabaseBackup,
-} from "lucide-react";
+import { Activity, Archive, ArchiveRestore, Cable, DatabaseBackup, FolderOpen, HardDrive, LayoutDashboard, MonitorCog, MoreHorizontal, Network, Package, RefreshCw, Server, Settings, SquareTerminal } from "lucide-react";
 import type { ReactNode } from "react";
 import { Link, NavLink, Outlet, useNavigate, useParams } from "react-router-dom";
 import { Badge, Button, Card, DropdownMenu, QueryErrorState, Skeleton, Typography } from "@/components";
@@ -36,7 +19,6 @@ const SECTIONS: SectionLink[] = [
   { section: "visao-geral", label: "Visão geral", icon: <LayoutDashboard /> },
   { section: "terminal", label: "Terminal", icon: <SquareTerminal /> },
   { section: "aplicativos", label: "Aplicativos", icon: <Package /> },
-  { section: "maquinas", label: "Máquinas", icon: <Boxes /> },
   { section: "arquivos", label: "Arquivos", icon: <FolderOpen /> },
   { section: "backups", label: "Backups", icon: <DatabaseBackup /> },
   { section: "armazenamento", label: "Armazenamento", icon: <HardDrive /> },
@@ -98,7 +80,7 @@ export const PageDevice = () => {
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <Badge tone="primary">
-              {device.connectionType === "USB" ? <Cable className="size-3" /> : <Network className="size-3" />}
+              {device.connectionType === "USB" ? <Cable className="size-3" /> : device.connectionType === "VIRTUAL" ? <MonitorCog className="size-3" /> : <Network className="size-3" />}
               {device.connectionTypeDescription}
             </Badge>
             <Badge>

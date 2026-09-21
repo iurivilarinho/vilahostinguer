@@ -1,7 +1,7 @@
 import type { ApiRequestParams } from "@/lib/api/types";
 
 export type DeviceStatus = "DISCOVERED" | "READY" | "AUTH_FAILED";
-export type ConnectionType = "USB" | "NETWORK";
+export type ConnectionType = "USB" | "NETWORK" | "VIRTUAL";
 export type PackageManager = "APK" | "APT" | "DNF" | "PACMAN";
 export type InitSystem = "SYSTEMD" | "OPENRC";
 export type CredentialAuthType = "PASSWORD" | "PRIVATE_KEY";

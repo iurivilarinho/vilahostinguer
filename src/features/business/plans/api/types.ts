@@ -1,4 +1,3 @@
-import type { DeviceBasicDto } from "@/features/devices/api";
 import type { PlanPriceDto } from "@/features/portal/catalog/api";
 import type { ApiRequestParams } from "@/lib/api/types";
 
@@ -6,7 +5,6 @@ export type PlanDto = {
   id: number;
   name: string;
   description: string | null;
-  device: DeviceBasicDto;
   cpuLimit: number;
   memoryMb: number;
   diskGb: number;
@@ -25,7 +23,6 @@ export type PlanDto = {
 export type PlanFilter = {
   search?: string;
   active?: boolean;
-  deviceId?: number;
 };
 
 export type GetPlansParams = ApiRequestParams<PlanDto, PlanFilter>;
@@ -33,7 +30,6 @@ export type GetPlansParams = ApiRequestParams<PlanDto, PlanFilter>;
 export type PlanRequest = {
   name: string;
   description: string;
-  deviceId: number;
   cpuLimit: number;
   memoryMb: number;
   diskGb: number;

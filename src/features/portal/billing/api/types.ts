@@ -1,4 +1,4 @@
-import type { MachineDistribution, MachineNetworkMode, MachineStatus } from "@/features/machines/api";
+import type { MachineDistribution, MachineStatus } from "@/features/machines/api";
 import type { ApiRequestParams } from "@/lib/api/types";
 import type { BillingCycle } from "../../catalog/api";
 
@@ -17,7 +17,7 @@ export type SubscriptionDto = {
   customer: CustomerBasicDto;
   planId: number;
   planName: string;
-  machine: { id: number; name: string; networkMode: MachineNetworkMode; status: MachineStatus } | null;
+  machine: { id: number; name: string; ipAddress: string; status: MachineStatus } | null;
   cycle: BillingCycle;
   cycleDescription: string;
   price: number;

@@ -14,7 +14,7 @@ public interface SubscriptionRepository extends JpaRepository<Subscription, Long
 
     List<Subscription> findByStatusIn(Collection<SubscriptionStatus> statuses);
 
-    List<Subscription> findByPlanDeviceIdAndStatusIn(Long deviceId, Collection<SubscriptionStatus> statuses);
+    List<Subscription> findByStatusInAndMachineIsNull(Collection<SubscriptionStatus> statuses);
 
     Optional<Subscription> findByMachineId(Long machineId);
 

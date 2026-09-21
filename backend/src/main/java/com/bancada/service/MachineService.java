@@ -1,77 +1,106 @@
 package com.bancada.service;
 
+import com.bancada.enums.CredentialAuthType;
 import com.bancada.enums.MachineAction;
 import com.bancada.enums.MachineDistribution;
-import com.bancada.enums.MachineNetworkMode;
 import com.bancada.enums.MachineStatus;
 import com.bancada.enums.OperationType;
 import com.bancada.filter.MachineFilter;
+import com.bancada.hyperv.CloudInit;
+import com.bancada.hyperv.MachineKeys;
+import com.bancada.models.Credential;
 import com.bancada.models.Device;
 import com.bancada.models.Machine;
-import com.bancada.models.MachinePort;
-import com.bancada.models.MachineVolume;
 import com.bancada.models.Operation;
 import com.bancada.records.CommandResult;
-import com.bancada.records.KeyValueOutput;
+import com.bancada.records.HyperVStatus;
 import com.bancada.records.MachineStatusChangedEvent;
+import com.bancada.records.VirtualMachineState;
 import com.bancada.repository.MachineRepository;
+import com.bancada.request.CredentialRequest;
 import com.bancada.request.MachineRequest;
 import com.bancada.response.DistributionResponse;
-import com.bancada.response.DockerStatusResponse;
 import com.bancada.response.MachineCreationResponse;
+import com.bancada.response.MachineHostResponse;
 import com.bancada.response.MachineLogsResponse;
 import com.bancada.response.MachineResponse;
 import com.bancada.response.MachineStatsResponse;
 import com.bancada.specification.MachineSpecification;
 import jakarta.annotation.PostConstruct;
 import jakarta.persistence.EntityNotFoundException;
+import java.io.IOException;
+import java.net.InetSocketAddress;
+import java.net.Socket;
 import java.time.Duration;
-import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
+import java.util.UUID;
+import java.util.function.Consumer;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.domain.Specification;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
- * Linux "machines": long-running Docker system containers. PID 1 is a tiny shell loop that starts
- * the SSH server (when installed) and then waits forever, so the machine survives restarts of the
- * device with its SSH working, without depending on systemd inside the container.
+ * Linux virtual machines on this PC (Hyper-V). A machine is created from the official cloud image
+ * of its distribution, configured by cloud-init (user, password, keys, fixed address) and shows up
+ * in the panel as a device of its own: once it answers, terminal, apps, files, backups and routes
+ * work on it like on a phone or a board.
  */
 @Service
 public class MachineService {
 
-    private static final Duration QUERY_TIMEOUT = Duration.ofSeconds(45);
-    private static final String LABEL = "bancada.machine";
-    private static final String START_SSHD = "mkdir -p /run/sshd; chown root:root /run/sshd; chmod 755 /run/sshd; "
-        + "pkill -x sshd 2>/dev/null; /usr/sbin/sshd";
-    private static final String ENTRYPOINT = "umask 022; if [ -x /usr/sbin/sshd ]; then " + START_SSHD + "; fi; exec tail -f /dev/null";
-    private static final int LOG_LINES = 300;
-    private static final String RESTORE_REPOSITORY = "bancada-restore/";
+    private static final Logger LOG = LoggerFactory.getLogger(MachineService.class);
+    private static final Duration QUERY_TIMEOUT = Duration.ofSeconds(30);
+    private static final Duration CLOUD_INIT_TIMEOUT = Duration.ofMinutes(25);
+    private static final long SSH_WAIT_MS = Duration.ofMinutes(10).toMillis();
+    private static final int FIRST_ADDRESS = 10;
+    private static final int LAST_ADDRESS = 254;
+    private static final int LOG_LINES = 200;
+    private static final List<String> DNS_SERVERS = List.of("1.1.1.1", "8.8.8.8");
 
     private final MachineRepository machineRepository;
+    private final HyperVService hyperVService;
+    private final MachineImageService machineImageService;
+    private final HostDiskService hostDiskService;
     private final DeviceService deviceService;
+    private final CredentialService credentialService;
     private final SshService sshService;
     private final OperationService operationService;
     private final ApplicationEventPublisher applicationEventPublisher;
+    private final SecretCipherService secretCipherService;
+    private final long reservedMemoryMb;
 
-    public MachineService(MachineRepository machineRepository, DeviceService deviceService, SshService sshService,
-                          OperationService operationService, ApplicationEventPublisher applicationEventPublisher) {
+    public MachineService(MachineRepository machineRepository, HyperVService hyperVService, MachineImageService machineImageService,
+                          HostDiskService hostDiskService, DeviceService deviceService, CredentialService credentialService,
+                          SshService sshService, OperationService operationService, ApplicationEventPublisher applicationEventPublisher,
+                          SecretCipherService secretCipherService, @Value("${bancada.vms.reserved-memory-mb}") long reservedMemoryMb) {
         this.machineRepository = machineRepository;
+        this.hyperVService = hyperVService;
+        this.machineImageService = machineImageService;
+        this.hostDiskService = hostDiskService;
         this.deviceService = deviceService;
+        this.credentialService = credentialService;
         this.sshService = sshService;
         this.operationService = operationService;
         this.applicationEventPublisher = applicationEventPublisher;
+        this.secretCipherService = secretCipherService;
+        this.reservedMemoryMb = reservedMemoryMb;
     }
 
-    /** A creation interrupted by closing the app can never finish. */
+    /** Creations cut by closing the panel end as failed (the next status sync corrects the rest). */
     @PostConstruct
     public void failInterruptedCreations() {
         for (Machine machine : machineRepository.findByStatus(MachineStatus.CREATING)) {
@@ -82,389 +111,237 @@ public class MachineService {
 
     @Transactional(readOnly = true)
     public Page<Machine> search(MachineFilter filter, Pageable pageable) {
-        Specification<Machine> specification = Specification.where(MachineSpecification.device(filter.getDeviceId()))
-            .and(MachineSpecification.search(filter.getSearch()))
+        Specification<Machine> specification = Specification.where(MachineSpecification.search(filter.getSearch()))
             .and(MachineSpecification.statusIn(filter.getStatus()));
         return machineRepository.findAll(specification, pageable);
     }
 
     @Transactional(readOnly = true)
     public Machine findById(Long id) {
-        return machineRepository.findById(id)
-            .orElseThrow(() -> new EntityNotFoundException("Máquina não encontrada para ID: " + id));
+        return machineRepository.findById(id).orElseThrow(() -> new EntityNotFoundException("Máquina não encontrada para ID: " + id));
     }
 
-    public List<DistributionResponse> distributions(Long deviceId) {
-        Device device = deviceService.findById(deviceId);
+    /** The machine behind a device, if the device is a virtual machine of this PC. */
+    @Transactional(readOnly = true)
+    public Machine findByDevice(Long deviceId) {
+        return machineRepository.findByDeviceId(deviceId).orElse(null);
+    }
+
+    public List<DistributionResponse> distributions() {
         return Arrays.stream(MachineDistribution.values())
-            .map(distribution -> new DistributionResponse(distribution, distribution.getDisplayName(), distribution.getVersions(),
-                distribution.supports(device.getArchitecture())))
+            .map(distribution -> new DistributionResponse(distribution, distribution.getDisplayName(), distribution.getVersions(), true))
             .toList();
     }
 
-    /** Checks the Docker client, the daemon and the kernel features Docker cannot live without. */
-    public DockerStatusResponse dockerStatus(Long deviceId) {
-        Device device = deviceService.requireReady(deviceId);
-        String script = String.join("\n",
-            "if command -v docker >/dev/null 2>&1; then echo installed=1; fi",
-            "if version=$(docker version --format '{{.Server.Version}}' 2>/tmp/bancada-docker.err); then",
-            "  echo running=1; echo \"version=$version\"",
-            "else",
-            "  echo \"message=$(head -c 400 /tmp/bancada-docker.err 2>/dev/null | tr '\\n' ' ')\"",
-            "fi",
-            "missing=''",
-            "for controller in memory devices cpuset; do",
-            "  awk -v c=$controller '$1==c && $4==1 {found=1} END {exit !found}' /proc/cgroups || missing=\"$missing,cgroup $controller\"",
-            "done",
-            "grep -qw overlay /proc/filesystems || modprobe overlay 2>/dev/null || missing=\"$missing,overlayfs\"",
-            "echo \"missing=${missing#,}\"");
-        CommandResult result = sshService.run(device, script, List.of(), true, QUERY_TIMEOUT);
-        KeyValueOutput output = KeyValueOutput.parse(result.output());
-        String missing = output.text("missing");
-        List<String> missingFeatures = missing == null ? List.of() : Arrays.asList(missing.split(","));
-        return new DockerStatusResponse(output.flag("installed"), output.flag("running"), output.text("version"), missingFeatures,
-            output.text("message"));
+    /** Hyper-V, memory and processors of this PC, and how much the machines already took. */
+    public MachineHostResponse host() {
+        HyperVStatus status = hyperVService.status();
+        List<Machine> machines = machineRepository.findByStatusNot(MachineStatus.REMOVED);
+        long usedMemory = machines.stream().mapToLong(Machine::getMemoryMb).sum();
+        long available = Math.max(0, status.memoryMb() - reservedMemoryMb - usedMemory);
+        return new MachineHostResponse(status.installed(), status.permitted(), status.network(), status.ready(), status.message(),
+            status.switchName(), status.network24(), status.cpus(), status.memoryMb(), reservedMemoryMb, usedMemory, available,
+            machines.size(), hostDiskService.list());
     }
 
     public MachineCreationResponse create(MachineRequest request) {
-        Device device = deviceService.requireReady(request.deviceId());
-        validateSystem(device, request.distribution(), request.version());
-        if (request.networkMode() == MachineNetworkMode.HOST && request.installSsh()
-            && (request.sshPort() == null || request.sshPort() == 22)) {
-            throw new IllegalArgumentException("Na rede do dispositivo a porta 22 já é dele. Escolha outra porta para o SSH da máquina.");
+        HyperVStatus status = hyperVService.requireReady();
+        validateSystem(request.distribution(), request.version());
+        if (machineRepository.existsByNameAndStatusNot(request.name(), MachineStatus.REMOVED)) {
+            throw new DataIntegrityViolationException("Já existe uma máquina chamada \"" + request.name() + "\".");
         }
-        String containerName = Machine.CONTAINER_PREFIX + request.name();
-        if (machineRepository.existsByDeviceIdAndContainerNameAndStatusNot(device.getId(), containerName, MachineStatus.REMOVED)) {
-            throw new DataIntegrityViolationException("Já existe uma máquina chamada \"" + request.name() + "\" neste dispositivo.");
-        }
-        Machine machine = machineRepository.save(new Machine(request, device));
-        Long machineId = machine.getId();
-        String script = creationScript(machine, request.password());
+        requireCapacity(status, request.cpuCount(), request.memoryMb());
+        long diskBytes = (long) request.diskGb() << 30;
+        String drive = request.drive() == null || request.drive().isBlank()
+            ? hostDiskService.roomiest(diskBytes).root()
+            : hostDiskService.requireRoom(request.drive(), diskBytes).root();
+        String address = allocateAddress();
+        MachineKeys keys = MachineKeys.generate(request.name());
+        Credential credential = credentialService.create(new CredentialRequest("Máquina " + request.name() + " (root)", "root",
+            CredentialAuthType.PRIVATE_KEY, keys.panelPrivateKey(), null, false));
+        Machine machine = machineRepository.save(new Machine(request, drive, address, macFor(address)));
+        Device device = deviceService.registerVirtual(request.name(), address, keys.hostFingerprint(), "ssh-rsa", credential);
+        machine.attachDevice(device, secretCipherService.encrypt(keys.hostPrivateKey()));
+        Machine saved = machineRepository.save(machine);
+        CloudInit seed = cloudInit(saved, request.password(), keys);
+        Long machineId = saved.getId();
         Operation operation;
         try {
-            operation = startCreation(device, machine, machineId, script);
-        } catch (RuntimeException e) {
-            // nothing reached the device: the record must not keep the name taken
+            operation = operationService.start(device, OperationType.MACHINE_CREATE, "Criar máquina " + saved.getName(), saved.getVmName(),
+                operationId -> {
+                    int exitCode = 1;
+                    try {
+                        exitCode = install(operationId, machineId, seed, true);
+                        return exitCode;
+                    } finally {
+                        updateStatus(machineId, exitCode == 0 ? MachineStatus.RUNNING : MachineStatus.FAILED);
+                    }
+                });
+        } catch (RuntimeException exception) {
+            // nothing reached Hyper-V: the name, address and device must not stay taken
             forceStatus(machineId, MachineStatus.REMOVED);
-            throw e;
+            deviceService.changeActive(device.getId(), false);
+            throw exception;
         }
-        return new MachineCreationResponse(new MachineResponse(machine), operation.getId());
+        return new MachineCreationResponse(new MachineResponse(saved), operation.getId());
     }
 
-    private Operation startCreation(Device device, Machine machine, Long machineId, String script) {
-        return operationService.start(device, OperationType.MACHINE_CREATE, "Criar máquina " + machine.getName(),
-            machine.getContainerName(),
-            operationId -> {
-                int exitCode = 1;
-                try {
-                    exitCode = sshService.stream(device, script, true,
-                        chunk -> operationService.appendOutput(operationId, chunk),
-                        channel -> operationService.registerChannel(operationId, channel));
-                    return exitCode;
-                } finally {
-                    updateStatus(machineId, exitCode == 0 ? MachineStatus.RUNNING : MachineStatus.FAILED);
-                }
-            });
+    /**
+     * Base image (downloaded once), disk, seed and VM; then waits for SSH and for cloud-init to
+     * finish, and reads the facts of the new device. With {@code fresh} false the existing VM gets a
+     * new disk and seed (reinstall).
+     */
+    public int install(Long operationId, Long machineId, CloudInit seed, boolean fresh) {
+        Consumer<String> log = chunk -> operationService.appendOutput(operationId, chunk);
+        Machine machine = findById(machineId);
+        var baseDisk = machineImageService.ensureBaseDisk(machine.getDistribution(), machine.getVersion(), log);
+        log.accept("== Gerando a configuração inicial (cloud-init) ==\n");
+        hyperVService.buildSeedIso(seed.files(), machine.seedPath());
+        int exitCode;
+        if (fresh) {
+            exitCode = hyperVService.prepareDisk(baseDisk, machine.diskPath(), machine.diskBytes(), log);
+            if (exitCode != 0) {
+                return exitCode;
+            }
+            exitCode = hyperVService.create(machine.getVmName(), machine.folder(), machine.diskPath(), machine.seedPath(),
+                machine.getCpuCount(), machine.getMemoryMb(), machine.getMacAddress(), machine.isAutoStart(), log);
+        } else {
+            sshService.invalidate(machine.getDevice().getId());
+            exitCode = hyperVService.reinstall(machine.getVmName(), baseDisk, machine.diskPath(), machine.diskBytes(), machine.seedPath(), log);
+        }
+        if (exitCode != 0) {
+            return exitCode;
+        }
+        log.accept("== Esperando o sistema subir em " + machine.getIpAddress() + " ==\n");
+        if (!waitForSsh(machine.getIpAddress())) {
+            log.accept("A máquina não respondeu no SSH em " + SSH_WAIT_MS / 60_000 + " minutos. Veja o console dela no Gerenciador do Hyper-V.\n");
+            return 1;
+        }
+        log.accept("== Terminando a configuração (cloud-init; a primeira vez instala as ferramentas do Hyper-V) ==\n");
+        CommandResult cloudInit = sshService.run(machine.getDevice(), "cloud-init status --wait >/dev/null 2>&1; cloud-init status 2>&1 | head -1",
+            List.of(), false, CLOUD_INIT_TIMEOUT);
+        log.accept(cloudInit.output());
+        deviceService.refreshFacts(machine.getDevice().getId());
+        log.accept("== Máquina pronta: ssh " + machine.getUsername() + "@" + machine.getIpAddress() + " ==\n");
+        return 0;
     }
 
     public Operation runAction(Long id, MachineAction action) {
-        Machine machine = findById(id);
-        if (machine.getStatus() == MachineStatus.REMOVED || machine.getStatus() == MachineStatus.CREATING) {
-            throw new IllegalStateException("A máquina " + machine.getName() + " está " + machine.getStatus().getDescription().toLowerCase() + ".");
-        }
-        Device device = deviceService.requireReady(machine.getDevice().getId());
-        String script = "docker " + action.getDockerCommand() + " " + SshService.quote(machine.getContainerName()) + " || exit $?\n"
-            + "echo '== " + action.getDescription() + ": concluído =='\n";
-        return operationService.start(device, OperationType.MACHINE_ACTION, action.getDescription() + " " + machine.getName(),
-            machine.getContainerName(), operationId -> {
-                int exitCode = sshService.stream(device, script, true,
-                    chunk -> operationService.appendOutput(operationId, chunk),
-                    channel -> operationService.registerChannel(operationId, channel));
-                if (exitCode == 0) {
-                    updateStatus(id, action.getResultingStatus());
+        Machine machine = requireUsable(id);
+        return operationService.start(machine.getDevice(), OperationType.MACHINE_ACTION, action.getDescription() + " " + machine.getName(),
+            machine.getVmName(), operationId -> {
+                switch (action) {
+                    case START -> hyperVService.start(machine.getVmName());
+                    case STOP -> hyperVService.stop(machine.getVmName(), false);
+                    case RESTART -> hyperVService.restart(machine.getVmName());
                 }
-                return exitCode;
+                operationService.appendOutput(operationId, "== " + action.getDescription() + ": concluído ==\n");
+                updateStatus(id, action.getResultingStatus());
+                return 0;
             });
     }
 
+    /** Erases the VM and its folder; the device is archived and the record stays in the history. */
     public Operation remove(Long id) {
         Machine machine = findById(id);
         if (machine.getStatus() == MachineStatus.REMOVED) {
             throw new IllegalStateException("A máquina já foi removida.");
         }
-        Device device = deviceService.requireReady(machine.getDevice().getId());
-        String script = "docker rm -f " + SshService.quote(machine.getContainerName()) + " >/dev/null 2>&1 || true\n"
-            + "echo '== Máquina " + machine.getName() + " removida. Pastas compartilhadas não foram apagadas. =='\n";
-        return operationService.start(device, OperationType.MACHINE_REMOVE, "Remover máquina " + machine.getName(),
-            machine.getContainerName(), operationId -> {
-                int exitCode = sshService.stream(device, script, true,
-                    chunk -> operationService.appendOutput(operationId, chunk),
-                    channel -> operationService.registerChannel(operationId, channel));
+        return operationService.start(machine.getDevice(), OperationType.MACHINE_REMOVE, "Remover máquina " + machine.getName(),
+            machine.getVmName(), operationId -> {
+                hyperVService.remove(machine.getVmName(), machine.folder());
+                sshService.invalidate(machine.getDevice().getId());
+                deviceService.changeActive(machine.getDevice().getId(), false);
                 forceStatus(id, MachineStatus.REMOVED);
-                return exitCode;
+                operationService.appendOutput(operationId, "== Máquina " + machine.getName() + " removida (disco apagado) ==\n");
+                return 0;
             });
     }
 
-    /** Reads the real container states and fixes the stored status of the device machines. */
-    public void syncStatuses(Long deviceId) {
-        Device device = deviceService.requireReady(deviceId);
-        CommandResult result = sshService.run(device,
-            "docker ps -a --filter label=" + LABEL + " --format '{{.Names}}|{{.State}}' 2>/dev/null", List.of(), true, QUERY_TIMEOUT);
-        if (!result.succeeded()) {
+    /** Every 20 s: the real state of the VMs in Hyper-V fixes the stored one. */
+    @Scheduled(initialDelay = 20_000, fixedDelay = 20_000)
+    public void syncStatuses() {
+        List<Machine> machines = machineRepository.findByStatusNot(MachineStatus.REMOVED);
+        if (machines.isEmpty()) {
             return;
         }
-        Map<String, String> states = new HashMap<>();
-        for (String line : result.output().split("\n")) {
-            String[] fields = line.trim().split("\\|");
-            if (fields.length == 2) {
-                states.put(fields[0], fields[1]);
-            }
+        Map<String, VirtualMachineState> states = new HashMap<>();
+        try {
+            hyperVService.list().forEach(state -> states.put(state.name(), state));
+        } catch (RuntimeException exception) {
+            LOG.debug("Hyper-V not readable now: {}", exception.getMessage());
+            return;
         }
-        for (Machine machine : machineRepository.findByDeviceIdAndStatusNot(deviceId, MachineStatus.REMOVED)) {
+        for (Machine machine : machines) {
             if (machine.getStatus() == MachineStatus.CREATING) {
                 continue;
             }
-            String state = states.get(machine.getContainerName());
-            MachineStatus actual = state == null ? MachineStatus.FAILED : "running".equals(state) ? MachineStatus.RUNNING : MachineStatus.STOPPED;
+            VirtualMachineState state = states.get(machine.getVmName());
+            MachineStatus actual = state == null ? MachineStatus.FAILED
+                : state.running() ? MachineStatus.RUNNING : state.off() ? MachineStatus.STOPPED : machine.getStatus();
             if (actual != machine.getStatus()) {
-                machine.changeStatus(actual);
-                machineRepository.save(machine);
-                applicationEventPublisher.publishEvent(new MachineStatusChangedEvent(machine.getId(), actual));
+                updateStatus(machine.getId(), actual);
             }
         }
     }
 
-    public List<MachineStatsResponse> stats(Long deviceId) {
-        Device device = deviceService.requireReady(deviceId);
-        List<Machine> machines = machineRepository.findByDeviceIdAndStatusNot(deviceId, MachineStatus.REMOVED);
-        if (machines.isEmpty()) {
-            return List.of();
-        }
-        CommandResult result = sshService.run(device,
-            "docker stats --no-stream --format '{{.Name}}|{{.CPUPerc}}|{{.MemUsage}}|{{.MemPerc}}|{{.PIDs}}' 2>/dev/null",
-            List.of(), true, QUERY_TIMEOUT);
-        Map<String, String[]> byName = new HashMap<>();
-        for (String line : result.output().split("\n")) {
-            String[] fields = line.trim().split("\\|");
-            if (fields.length == 5) {
-                byName.put(fields[0], fields);
-            }
-        }
-        List<MachineStatsResponse> stats = new ArrayList<>();
-        for (Machine machine : machines) {
-            String[] fields = byName.get(machine.getContainerName());
-            if (fields != null) {
-                stats.add(new MachineStatsResponse(machine.getId(), parsePercent(fields[1]), fields[2], parsePercent(fields[3]),
-                    parseInteger(fields[4])));
-            }
-        }
-        return stats;
+    /** CPU and memory in use, as Hyper-V sees them. */
+    public List<MachineStatsResponse> stats() {
+        Map<String, VirtualMachineState> states = new HashMap<>();
+        hyperVService.list().forEach(state -> states.put(state.name(), state));
+        return machineRepository.findByStatusNot(MachineStatus.REMOVED).stream()
+            .filter(machine -> states.containsKey(machine.getVmName()))
+            .map(machine -> {
+                VirtualMachineState state = states.get(machine.getVmName());
+                double memoryPercent = machine.getMemoryMb() == 0 ? 0 : state.memoryMb() * 100.0 / machine.getMemoryMb();
+                return new MachineStatsResponse(machine.getId(), (double) state.cpuPercent(),
+                    state.memoryMb() + " MB / " + machine.getMemoryMb() + " MB", memoryPercent, null);
+            })
+            .toList();
     }
 
+    /** Last lines of the system journal of the machine. */
     public MachineLogsResponse logs(Long id) {
-        Machine machine = findById(id);
-        Device device = deviceService.requireReady(machine.getDevice().getId());
-        CommandResult result = sshService.run(device,
-            "docker logs --tail " + LOG_LINES + " " + SshService.quote(machine.getContainerName()) + " 2>&1", List.of(), true, QUERY_TIMEOUT);
+        Machine machine = requireRunning(id);
+        CommandResult result = sshService.run(machine.getDevice(),
+            "journalctl -n " + LOG_LINES + " --no-pager 2>/dev/null || tail -n " + LOG_LINES + " /var/log/syslog /var/log/messages 2>/dev/null",
+            List.of(), false, QUERY_TIMEOUT);
         return new MachineLogsResponse(machine.getId(), result.output());
     }
 
     /** New password for the machine user (SSH and sudo). */
     public void changeUserPassword(Long id, String password) {
-        Machine machine = findById(id);
-        if (machine.getStatus() != MachineStatus.RUNNING) {
-            throw new IllegalStateException("Ligue o servidor antes de trocar a senha.");
-        }
-        Device device = deviceService.requireReady(machine.getDevice().getId());
-        String script = "printf '%s:%s\\n' " + SshService.quote(machine.getUsername()) + " " + SshService.quote(password)
-            + " | docker exec -i " + SshService.quote(machine.getContainerName()) + " chpasswd\n";
-        CommandResult result = sshService.run(device, script, List.of(), true, QUERY_TIMEOUT);
+        Machine machine = requireRunning(id);
+        CommandResult result = sshService.run(machine.getDevice(),
+            "printf '%s:%s\\n' " + SshService.quote(machine.getUsername()) + " " + SshService.quote(password) + " | chpasswd\n",
+            List.of(), false, QUERY_TIMEOUT);
         if (!result.succeeded()) {
             throw new IllegalStateException("A senha não foi trocada: " + result.errorOutput().trim());
         }
     }
 
-    /** Command that opens an interactive shell inside the machine, for the web terminal. */
-    public String shellCommand(Machine machine) {
-        return "docker exec -it " + SshService.quote(machine.getContainerName())
-            + " sh -c 'umask 022; if command -v bash >/dev/null 2>&1; then exec bash -l; else exec sh -l; fi'";
+    /** The keys the machine was created with: a reinstall keeps its host key and the panel access. */
+    public MachineKeys keysOf(Machine machine) {
+        Credential credential = machine.getDevice().getCredential();
+        String hostKey = secretCipherService.decrypt(machine.getEncryptedHostKey());
+        String panelKey = credential == null ? null : secretCipherService.decrypt(credential.getEncryptedSecret());
+        if (hostKey == null || panelKey == null) {
+            throw new IllegalStateException("As chaves da máquina " + machine.getName() + " não estão mais guardadas.");
+        }
+        return MachineKeys.restore(hostKey, panelKey, machine.getName());
     }
 
-    /** Fresh install: pull the image, start the container and prepare user, sudo and SSH. */
-    public String creationScript(Machine machine, String password) {
-        String name = SshService.quote(machine.getContainerName());
-        String image = SshService.quote(machine.getImage());
-        return preamble(machine)
-            + "echo '== Baixando a imagem " + machine.getImage() + " =='\n"
-            + "docker pull " + image + " || exit $?\n"
-            + "docker rm -f " + name + " >/dev/null 2>&1\n"
-            + "echo '== Criando a máquina =='\n"
-            + runCommand(machine, image) + " || exit $?\n"
-            + provisionScript(machine, password)
-            + "echo '== Máquina pronta =='\n";
-    }
-
-    /**
-     * Restore: the image imported from a backup already carries the system, the user and the SSH
-     * configuration; only the container is recreated from it, with the same resources and ports.
-     */
-    public String restoreScript(Machine machine, String importedImage) {
-        return recreateScript(machine, importedImage, "Recriando a máquina a partir do backup", "Máquina restaurada");
-    }
-
-    /**
-     * Docker cannot add a folder to an existing container. The system of the machine is saved with
-     * {@code docker commit} and the container is recreated from it with the folders it has now; a
-     * folder in {@code handOver} that is still empty is given to the machine user.
-     */
-    public String rebuildScript(Machine machine, String snapshotImage, String handOver) {
-        String name = SshService.quote(machine.getContainerName());
-        StringBuilder script = new StringBuilder()
-            .append("echo '== Guardando o sistema da máquina (docker commit) =='\n")
-            .append("docker commit ").append(name).append(' ').append(SshService.quote(snapshotImage)).append(" >/dev/null || exit $?\n")
-            .append(recreateScript(machine, snapshotImage, "Recriando a máquina com as pastas novas", "Máquina pronta"));
-        if (handOver != null) {
-            String path = SshService.quote(handOver);
-            script.append("docker exec ").append(name)
-                .append(inside("[ -z \"$(ls -A " + path + " | grep -v '^lost+found$')\" ] && chown " + machine.getUsername() + ": "
-                    + path + "; true"))
-                .append('\n');
-        }
-        return script.toString();
-    }
-
-    /** Local image name for the saved system of a machine being rebuilt. */
-    public String snapshotImage(Machine machine) {
-        return RESTORE_REPOSITORY + machine.getContainerName() + ":s" + System.currentTimeMillis();
-    }
-
-    private String recreateScript(Machine machine, String image, String title, String done) {
-        String name = SshService.quote(machine.getContainerName());
-        String quotedImage = SshService.quote(image);
-        return preamble(machine)
-            + "docker rm -f " + name + " >/dev/null 2>&1\n"
-            + "echo '== " + title + " =='\n"
-            + runCommand(machine, quotedImage) + " || exit $?\n"
-            + "for old in $(docker images " + SshService.quote(RESTORE_REPOSITORY + machine.getContainerName())
-            + " --format '{{.Repository}}:{{.Tag}}'); do\n"
-            + "  [ \"$old\" = " + quotedImage + " ] || docker rmi \"$old\" >/dev/null 2>&1\n"
-            + "done\n"
-            + "echo '== " + done + " =='\n";
-    }
-
-    /** Local image name for a machine backup imported on the device. */
-    public String restoreImage(Machine machine, Long backupId) {
-        return RESTORE_REPOSITORY + machine.getContainerName() + ":b" + backupId;
-    }
-
-    /** Docker checks, CPU limit flag, proxy for the machine and shared folders. */
-    private String preamble(Machine machine) {
-        StringBuilder script = new StringBuilder()
-            .append("command -v docker >/dev/null 2>&1 || { echo 'O Docker não está instalado neste dispositivo.'; exit 127; }\n")
-            .append("docker info >/dev/null 2>&1 || { echo 'O Docker não está respondendo. Veja a aba Aplicativos.'; exit 1; }\n");
-        if (machine.getCpuLimit() != null) {
-            // kernels without CFS quota (Android 3.x) reject --cpus; a proportional weight is the closest
-            int shares = (int) Math.max(2, Math.round(machine.getCpuLimit() * 1024));
-            script.append("cpu_limit=")
-                .append(SshService.quote("--cpus " + String.format(Locale.ROOT, "%.2f", machine.getCpuLimit()))).append('\n')
-                .append("if docker info 2>&1 | grep -q 'No cpu cfs quota'; then\n")
-                .append("  echo 'Aviso: o kernel não limita CPU por cota; a máquina recebe peso proporcional (--cpu-shares).'\n")
-                .append("  cpu_limit='--cpu-shares ").append(shares).append("'\n")
-                .append("fi\n");
-        }
-        // an isolated machine cannot reach the device loopback: its proxy is the bridge gateway (see docker-setup.sh)
-        script.append("machine_proxy=\"${http_proxy:-}\"\n");
-        if (machine.getNetworkMode() == MachineNetworkMode.BRIDGE) {
-            script.append("case \"$machine_proxy\" in *127.0.0.1*|*localhost*)\n")
-                .append("  gateway=$(docker network inspect bridge -f '{{range .IPAM.Config}}{{.Gateway}}{{end}}' 2>/dev/null)\n")
-                .append("  machine_proxy=$(printf '%s' \"$machine_proxy\" | sed \"s#127\\.0\\.0\\.1#${gateway:-172.17.0.1}#; s#localhost#${gateway:-172.17.0.1}#\")\n")
-                .append("  [ -x /usr/local/sbin/bancada-bridge-proxy ] && /usr/local/sbin/bancada-bridge-proxy >/dev/null 2>&1\n")
-                .append(";;\nesac\n");
-        }
-        for (MachineVolume volume : machine.getVolumes()) {
-            script.append("mkdir -p ").append(SshService.quote(volume.getHostPath())).append('\n');
-        }
-        return script.toString();
-    }
-
-    private String runCommand(Machine machine, String quotedImage) {
-        StringBuilder run = new StringBuilder("docker run -d --name ").append(SshService.quote(machine.getContainerName()))
-            .append(" --hostname ").append(SshService.quote(machine.getName()))
-            .append(" --label ").append(LABEL).append('=').append(machine.getId())
-            .append(" --restart ").append(machine.isAutoStart() ? "unless-stopped" : "no");
-        if (machine.getCpuLimit() != null) {
-            run.append(" $cpu_limit");
-        }
-        if (machine.getMemoryLimitMb() != null) {
-            run.append(" --memory ").append(machine.getMemoryLimitMb()).append('m');
-        }
-        if (machine.getNetworkMode() == MachineNetworkMode.HOST) {
-            // on the host network Docker does not put the machine name in /etc/hosts (sudo complains)
-            run.append(" --network host --add-host ").append(SshService.quote(machine.getName() + ":127.0.1.1"));
-        }
-        for (MachinePort port : machine.getPorts()) {
-            run.append(" -p ").append(port.getHostPort()).append(':').append(port.getContainerPort()).append('/').append(port.getProtocol());
-        }
-        for (MachineVolume volume : machine.getVolumes()) {
-            run.append(" -v ").append(SshService.quote(volume.getHostPath() + ":" + volume.getContainerPath()));
-        }
-        run.append(" ${machine_proxy:+-e http_proxy=$machine_proxy -e https_proxy=$machine_proxy -e HTTP_PROXY=$machine_proxy"
-            + " -e HTTPS_PROXY=$machine_proxy -e no_proxy=localhost,127.0.0.1}");
-        run.append(" --entrypoint sh ").append(quotedImage).append(" -c ").append(SshService.quote(ENTRYPOINT));
-        return run.toString();
-    }
-
-    /** Inside a fresh container: basic packages, proxy profile, user with sudo, shared folders and SSH. */
-    private String provisionScript(Machine machine, String password) {
-        String name = SshService.quote(machine.getContainerName());
-        String user = machine.getUsername();
-        StringBuilder script = new StringBuilder()
-            .append("echo '== Instalando o básico do sistema (pode levar alguns minutos) =='\n")
-            .append("docker exec ${machine_proxy:+-e http_proxy=$machine_proxy -e https_proxy=$machine_proxy} ").append(name)
-            .append(inside(machine.getDistribution().packageInstallCommand(machine.isSshEnabled()))).append(" || exit $?\n")
-            .append("if [ -n \"$machine_proxy\" ]; then\n")
-            .append("  docker exec -e machine_proxy=\"$machine_proxy\" ").append(name)
-            .append(inside("mkdir -p /etc/profile.d && echo \"export http_proxy=$machine_proxy https_proxy=$machine_proxy "
-                + "no_proxy=localhost,127.0.0.1\" > /etc/profile.d/proxy.sh")).append('\n')
-            .append("fi\n")
-            .append("echo '== Criando o usuário ").append(user).append(" =='\n")
-            .append("docker exec ").append(name)
-            .append(inside("id -u " + user + " >/dev/null 2>&1 || useradd -m -s /bin/bash " + user
-                + " 2>/dev/null || adduser -D -s /bin/bash " + user)).append(" || exit $?\n")
-            .append("printf '%s:%s\\n' ").append(SshService.quote(user)).append(' ').append(SshService.quote(password))
-            .append(" | docker exec -i ").append(name).append(" chpasswd || exit $?\n")
-            .append("docker exec ").append(name)
-            .append(inside("mkdir -p /etc/sudoers.d && echo '" + user + " ALL=(ALL) ALL' > /etc/sudoers.d/" + user
-                + " && chmod 440 /etc/sudoers.d/" + user)).append(" || exit $?\n");
-        // a shared folder that is still empty was just created by this script: hand it to the user
-        for (MachineVolume volume : machine.getVolumes()) {
-            String path = SshService.quote(volume.getContainerPath());
-            script.append("docker exec ").append(name)
-                .append(inside("[ -z \"$(ls -A " + path + ")\" ] && chown " + user + ": " + path + "; true")).append('\n');
-        }
-        if (machine.isSshEnabled()) {
-            String port = String.valueOf(machine.getSshPort());
-            script.append("echo '== Ligando o SSH na porta ").append(port).append(" =='\n")
-                .append("docker exec ").append(name)
-                .append(inside("ssh-keygen -A >/dev/null 2>&1; sed -i -e '/^#\\?Port /d' /etc/ssh/sshd_config; "
-                    + "echo 'Port " + port + "' >> /etc/ssh/sshd_config; " + START_SSHD))
-                .append(" || exit $?\n");
-        }
-        return script.toString();
-    }
-
-    /**
-     * Command run by {@code sh} inside the machine with umask 022: this Docker hands docker exec an
-     * umask of 000, which would leave every file created world-writable (and sshd refuses to start).
-     */
-    private static String inside(String command) {
-        return " sh -c " + SshService.quote("umask 022; " + command);
+    /** Seed for a machine: a new instance id makes cloud-init run again on a reinstall. */
+    public CloudInit cloudInit(Machine machine, String password, MachineKeys keys) {
+        return new CloudInit(machine.getName(), machine.getVmName() + "-" + UUID.randomUUID().toString().substring(0, 8),
+            machine.getUsername(), password, machine.getDistribution().getAdminGroup(), keys.panelPublicKey(), keys.hostPrivateKey(),
+            keys.hostPublicKey(), machine.getMacAddress(), machine.getIpAddress(), 24, hyperVService.gateway(), DNS_SERVERS);
     }
 
     /** Applies the status when the lifecycle allows it (a removed machine stays removed). */
     public void updateStatus(Long id, MachineStatus target) {
         Machine machine = findById(id);
-        if (machine.getStatus().canTransitionTo(target)) {
+        if (machine.getStatus() != target && machine.getStatus().canTransitionTo(target)) {
             machine.changeStatus(target);
             machineRepository.save(machine);
             applicationEventPublisher.publishEvent(new MachineStatusChangedEvent(id, target));
@@ -491,38 +368,80 @@ public class MachineService {
         return machineRepository.save(machine);
     }
 
-    @Transactional
-    public Machine useImage(Long id, String image) {
-        Machine machine = findById(id);
-        machine.useImage(image);
-        return machineRepository.save(machine);
-    }
-
-    /** New folder list and the saved system to recreate from (see {@link #rebuildScript}). */
-    @Transactional
-    public Machine changeVolumes(Long id, MachineVolume added, String removedHostPath, String image) {
-        Machine machine = findById(id);
-        if (removedHostPath != null) {
-            machine.removeVolume(removedHostPath);
-        }
-        if (added != null) {
-            machine.addVolume(added);
-        }
-        machine.useImage(image);
-        return machineRepository.save(machine);
-    }
-
-    /** Distribution and version must exist and have an image for the processor of the device. */
-    public void validateSystem(Device device, MachineDistribution distribution, String version) {
-        if (!distribution.supports(device.getArchitecture())) {
-            throw new IllegalArgumentException(distribution.getDisplayName() + " não tem imagem para " + device.getArchitecture() + ".");
-        }
+    public void validateSystem(MachineDistribution distribution, String version) {
         if (!distribution.getVersions().contains(version)) {
-            throw new IllegalArgumentException("Versão não oferecida: " + version);
+            throw new IllegalArgumentException("Versão não oferecida: " + distribution.getDisplayName() + " " + version);
         }
     }
 
-    /** Removal always ends as REMOVED, whatever state the container was in. */
+    /** Refuses a machine this PC cannot hold: processors and memory left after Windows and the other machines. */
+    public void requireCapacity(HyperVStatus status, int cpus, int memoryMb) {
+        if (cpus > status.cpus()) {
+            throw new IllegalArgumentException("Este PC tem " + status.cpus() + " processadores lógicos; a máquina não pode ter mais.");
+        }
+        long used = machineRepository.findByStatusNot(MachineStatus.REMOVED).stream().mapToLong(Machine::getMemoryMb).sum();
+        long available = status.memoryMb() - reservedMemoryMb - used;
+        if (memoryMb > available) {
+            throw new IllegalStateException("Não há memória para mais " + memoryMb + " MB: o PC tem " + status.memoryMb() + " MB, "
+                + reservedMemoryMb + " ficam para o Windows e as máquinas já usam " + used + " MB (sobram " + Math.max(0, available) + " MB).");
+        }
+    }
+
+    private Machine requireUsable(Long id) {
+        Machine machine = findById(id);
+        if (machine.getStatus() == MachineStatus.REMOVED || machine.getStatus() == MachineStatus.CREATING) {
+            throw new IllegalStateException("A máquina " + machine.getName() + " está " + machine.getStatus().getDescription().toLowerCase() + ".");
+        }
+        return machine;
+    }
+
+    private Machine requireRunning(Long id) {
+        Machine machine = findById(id);
+        if (machine.getStatus() != MachineStatus.RUNNING) {
+            throw new IllegalStateException("Ligue a máquina " + machine.getName() + " antes.");
+        }
+        return machine;
+    }
+
+    /** First free address of the machine network (from .10), never reused while its machine exists. */
+    private String allocateAddress() {
+        Set<String> taken = new HashSet<>();
+        machineRepository.findByStatusNot(MachineStatus.REMOVED).forEach(machine -> taken.add(machine.getIpAddress()));
+        for (int last = FIRST_ADDRESS; last <= LAST_ADDRESS; last++) {
+            String address = hyperVService.network() + "." + last;
+            if (!taken.contains(address)) {
+                return address;
+            }
+        }
+        throw new IllegalStateException("A rede das máquinas está cheia (" + (LAST_ADDRESS - FIRST_ADDRESS + 1) + " endereços).");
+    }
+
+    /** Hyper-V MAC range (00:15:5D) with the address in the last bytes: unique on this PC. */
+    static String macFor(String address) {
+        String[] octets = address.split("\\.");
+        return String.format(Locale.ROOT, "00:15:5D:%02X:%02X:%02X", Integer.parseInt(octets[1]), Integer.parseInt(octets[2]),
+            Integer.parseInt(octets[3]));
+    }
+
+    private static boolean waitForSsh(String address) {
+        long deadline = System.currentTimeMillis() + SSH_WAIT_MS;
+        while (System.currentTimeMillis() < deadline) {
+            try (Socket socket = new Socket()) {
+                socket.connect(new InetSocketAddress(address, 22), 2_000);
+                return true;
+            } catch (IOException exception) {
+                try {
+                    Thread.sleep(5_000);
+                } catch (InterruptedException interrupted) {
+                    Thread.currentThread().interrupt();
+                    return false;
+                }
+            }
+        }
+        return false;
+    }
+
+    /** Removal always ends as REMOVED, whatever state the VM was in. */
     private void forceStatus(Long id, MachineStatus target) {
         Machine machine = findById(id);
         if (machine.getStatus() != target) {
@@ -532,22 +451,6 @@ public class MachineService {
             machine.changeStatus(target);
             machineRepository.save(machine);
             applicationEventPublisher.publishEvent(new MachineStatusChangedEvent(id, target));
-        }
-    }
-
-    private static Double parsePercent(String value) {
-        try {
-            return Double.parseDouble(value.replace("%", "").trim());
-        } catch (NumberFormatException exception) {
-            return null;
-        }
-    }
-
-    private static Integer parseInteger(String value) {
-        try {
-            return Integer.parseInt(value.trim());
-        } catch (NumberFormatException exception) {
-            return null;
         }
     }
 }

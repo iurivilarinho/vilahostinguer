@@ -1,5 +1,5 @@
 import type { DeviceBasicDto } from "@/features/devices/api";
-import type { MachineNetworkMode, MachineStatus } from "@/features/machines/api";
+import type { MachineStatus } from "@/features/machines/api";
 import type { ApiRequestParams } from "@/lib/api/types";
 
 export type DnsProvider = "CLOUDFLARE" | "DUCKDNS" | "CUSTOM_URL" | "MANUAL";
@@ -59,7 +59,7 @@ export type ChangeDomainActiveRequest = {
 export type MachineBasicDto = {
   id: number;
   name: string;
-  networkMode: MachineNetworkMode;
+  ipAddress: string;
   status: MachineStatus;
 };
 

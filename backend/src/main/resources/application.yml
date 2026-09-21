@@ -56,6 +56,13 @@ bancada:
   portal:
     # Local port of the customer panel, published on the internet by the gateway.
     port: ${BANCADA_PORTAL_PORT:8748}
+  vms:
+    # Hyper-V network of the machines, created by tools\habilitar-hyperv.ps1: an internal switch,
+    # this PC at <network>.1 and NAT to the internet. Every machine gets a fixed address in it.
+    switch: ${BANCADA_VM_SWITCH:Bancada}
+    network: ${BANCADA_VM_NETWORK:10.77.0}
+    # memory kept for Windows and the panel; machines only get what is left
+    reserved-memory-mb: ${BANCADA_VM_RESERVED_MB:4096}
   nbd:
     # Where the devices fetch the disks kept on this PC (standard NBD port). Only the device a
     # disk was given to is served.

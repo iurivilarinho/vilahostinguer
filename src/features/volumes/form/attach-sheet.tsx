@@ -11,7 +11,7 @@ import { useAttachVolumeMutation, type VolumeDto } from "../api";
 import { attachFormSchema, DEFAULT_ATTACH_FORM_VALUES, type AttachFormValues } from "./attach-schema";
 
 const READY_DEVICES_PARAMS = { page: 0, size: 100, filter: { active: true, status: ["READY" as const] } };
-const USABLE_MACHINES_PARAMS = { page: 0, size: 200, filter: { status: ["RUNNING" as const, "STOPPED" as const] } };
+const USABLE_MACHINES_PARAMS = { page: 0, size: 200, filter: { status: ["RUNNING" as const] } };
 
 type AttachSheetProps = {
   volume: VolumeDto | null;
@@ -20,7 +20,7 @@ type AttachSheetProps = {
   presetDeviceId?: number;
 };
 
-/** Entrega o disco a um dispositivo (montado numa pasta) ou a uma máquina (aparece dentro dela). */
+/** Entrega o disco a um dispositivo (montado numa pasta) ou a uma máquina virtual (montado dentro dela). */
 export const AttachSheet = ({ volume, onClose, presetDeviceId }: AttachSheetProps) => {
   const open = volume !== null;
   const {
@@ -61,7 +61,7 @@ export const AttachSheet = ({ volume, onClose, presetDeviceId }: AttachSheetProp
     onClose();
   };
 
-  const defaultMount = volume ? (target === "MACHINE" ? `/srv/bancada/discos/${volume.name}` : `/mnt/${volume.name}`) : "";
+  const defaultMount = volume ? `/mnt/${volume.name}` : "";
 
   return (
     <AppSheet
@@ -84,7 +84,7 @@ export const AttachSheet = ({ volume, onClose, presetDeviceId }: AttachSheetProp
         <FieldWrapper label="Para quem" htmlFor="attach-target">
           <Select id="attach-target" {...register("target")}>
             <option value="DEVICE">O próprio dispositivo (uma pasta dele)</option>
-            <option value="MACHINE">Uma máquina (aparece dentro dela)</option>
+            <option value="MACHINE">Uma máquina virtual deste PC (montado dentro dela)</option>
           </Select>
         </FieldWrapper>
 
@@ -106,7 +106,7 @@ export const AttachSheet = ({ volume, onClose, presetDeviceId }: AttachSheetProp
                 <option value="">Escolha…</option>
                 {(machines?.data ?? []).map((machine) => (
                   <option key={machine.id} value={machine.id}>
-                    {machine.name} — {machine.device.name}
+                    {machine.name} ({machine.ipAddress})
                   </option>
                 ))}
               </Select>
@@ -122,14 +122,16 @@ export const AttachSheet = ({ volume, onClose, presetDeviceId }: AttachSheetProp
           </>
         )}
 
-        <FieldWrapper
-          label="Pasta de montagem no dispositivo"
-          htmlFor="attach-mount-path"
-          error={errors.mountPath?.message}
-          description={`Vazio: ${defaultMount}. Precisa ficar dentro de /mnt, /media, /srv, /home, /opt ou /data e estar vazia.`}
-        >
-          <Input id="attach-mount-path" placeholder={defaultMount} autoComplete="off" {...register("mountPath")} aria-invalid={Boolean(errors.mountPath)} />
-        </FieldWrapper>
+        {target === "DEVICE" && (
+          <FieldWrapper
+            label="Pasta de montagem no dispositivo"
+            htmlFor="attach-mount-path"
+            error={errors.mountPath?.message}
+            description={`Vazio: ${defaultMount}. Precisa ficar dentro de /mnt, /media, /srv, /home, /opt ou /data e estar vazia.`}
+          >
+            <Input id="attach-mount-path" placeholder={defaultMount} autoComplete="off" {...register("mountPath")} aria-invalid={Boolean(errors.mountPath)} />
+          </FieldWrapper>
+        )}
 
         <div className="flex gap-3 rounded-lg border border-border bg-muted/40 p-3">
           <Info className="size-5 shrink-0 text-primary" />
@@ -141,8 +143,7 @@ export const AttachSheet = ({ volume, onClose, presetDeviceId }: AttachSheetProp
             )}
             {target === "MACHINE" && (
               <Typography variant="caption" as="p">
-                O Docker não acrescenta pastas a uma máquina existente: o sistema dela é guardado (docker commit) e ela é recriada com o disco.
-                Nada do que está dentro se perde, mas ela reinicia.
+                A máquina precisa estar ligada. O disco é montado dentro dela e passa a ser do usuário dela.
               </Typography>
             )}
             <Typography variant="caption" as="p">

@@ -1,13 +1,10 @@
 package com.bancada.models;
 
 import com.bancada.enums.MachineDistribution;
-import com.bancada.enums.MachineNetworkMode;
 import com.bancada.enums.MachineStatus;
 import com.bancada.request.MachineRequest;
 import io.swagger.v3.oas.annotations.media.Schema;
-import jakarta.persistence.CollectionTable;
 import jakarta.persistence.Column;
-import jakarta.persistence.ElementCollection;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
@@ -17,42 +14,44 @@ import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.JoinColumn;
-import jakarta.persistence.ManyToOne;
+import jakarta.persistence.OneToOne;
 import jakarta.persistence.PrePersist;
 import jakarta.persistence.PreUpdate;
 import jakarta.persistence.Table;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.time.LocalDateTime;
-import java.util.ArrayList;
-import java.util.List;
 import java.util.Objects;
 
-/** A Linux machine: a long-running Docker system container on a device. */
+/**
+ * A Linux virtual machine on this PC (Hyper-V). It lives in a folder on one of the PC disks, has a
+ * fixed address on the Bancada network and appears in the panel as a device of its own, peer of
+ * the phones and boards, with terminal, apps, files and backups.
+ */
 @Entity
 @Table(name = "machines")
-@Schema(description = "Máquina Linux num dispositivo")
+@Schema(description = "Máquina virtual Linux deste PC")
 public class Machine {
 
-    public static final String CONTAINER_PREFIX = "bancada-";
-    public static final int DEFAULT_SSH_PORT = 22;
+    public static final String FOLDER = "BancadaVMs";
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     @Schema(description = "Identificador")
     private Long id;
 
-    @ManyToOne(fetch = FetchType.EAGER, optional = false)
-    @JoinColumn(name = "fk_Id_Device", nullable = false,
-        foreignKey = @ForeignKey(name = "FK_FROM_TBMACHINES_FOR_TBDEVICES"))
-    @Schema(description = "Dispositivo onde roda")
+    @OneToOne(fetch = FetchType.EAGER)
+    @JoinColumn(name = "fk_Id_Device", foreignKey = @ForeignKey(name = "FK_FROM_TBMACHINES_FOR_TBDEVICES"))
+    @Schema(description = "O dispositivo que representa a máquina no painel")
     private Device device;
 
     @Column(name = "name", nullable = false)
     @Schema(description = "Nome")
     private String name;
 
-    @Column(name = "container_name", nullable = false)
-    @Schema(description = "Nome do contêiner no Docker")
-    private String containerName;
+    @Column(name = "vm_name", nullable = false)
+    @Schema(description = "Nome da VM no Hyper-V")
+    private String vmName;
 
     @Enumerated(EnumType.STRING)
     @Column(name = "distribution", nullable = false)
@@ -63,49 +62,40 @@ public class Machine {
     @Schema(description = "Versão da distribuição")
     private String version;
 
-    @Column(name = "image", nullable = false)
-    @Schema(description = "Imagem Docker")
-    private String image;
+    @Column(name = "cpu_count", nullable = false)
+    @Schema(description = "Processadores virtuais")
+    private int cpuCount;
 
-    @Column(name = "cpu_limit")
-    @Schema(description = "Limite de CPUs")
-    private Double cpuLimit;
+    @Column(name = "memory_mb", nullable = false)
+    @Schema(description = "Memória em MB")
+    private int memoryMb;
 
-    @Column(name = "memory_limit_mb")
-    @Schema(description = "Limite de memória em MB")
-    private Integer memoryLimitMb;
+    @Column(name = "disk_gb", nullable = false)
+    @Schema(description = "Tamanho do disco em GB")
+    private int diskGb;
 
-    @Enumerated(EnumType.STRING)
-    @Column(name = "network_mode", nullable = false)
-    @Schema(description = "Rede")
-    private MachineNetworkMode networkMode;
+    @Column(name = "drive", nullable = false)
+    @Schema(description = "Disco do PC onde a máquina fica")
+    private String drive;
 
-    @ElementCollection(fetch = FetchType.EAGER)
-    @CollectionTable(name = "machine_ports", joinColumns = @JoinColumn(name = "fk_Id_Machine",
-        foreignKey = @ForeignKey(name = "FK_FROM_TBMACHINE_PORTS_FOR_TBMACHINES")))
-    @Schema(description = "Portas encaminhadas")
-    private List<MachinePort> ports = new ArrayList<>();
+    @Column(name = "ip_address", nullable = false)
+    @Schema(description = "Endereço fixo na rede das máquinas")
+    private String ipAddress;
 
-    @ElementCollection(fetch = FetchType.EAGER)
-    @CollectionTable(name = "machine_volumes", joinColumns = @JoinColumn(name = "fk_Id_Machine",
-        foreignKey = @ForeignKey(name = "FK_FROM_TBMACHINE_VOLUMES_FOR_TBMACHINES")))
-    @Schema(description = "Pastas compartilhadas")
-    private List<MachineVolume> volumes = new ArrayList<>();
+    @Column(name = "mac_address", nullable = false)
+    @Schema(description = "Endereço MAC fixo")
+    private String macAddress;
+
+    @Column(name = "encrypted_host_key", columnDefinition = "text")
+    @Schema(description = "Chave SSH de servidor da máquina, cifrada com a conta do Windows")
+    private String encryptedHostKey;
 
     @Column(name = "username", nullable = false)
     @Schema(description = "Usuário criado na máquina")
     private String username;
 
-    @Column(name = "ssh_enabled", nullable = false, columnDefinition = "boolean default false")
-    @Schema(description = "Servidor SSH instalado")
-    private boolean sshEnabled;
-
-    @Column(name = "ssh_port")
-    @Schema(description = "Porta do SSH dentro da máquina")
-    private Integer sshPort;
-
     @Column(name = "auto_start", nullable = false, columnDefinition = "boolean default true")
-    @Schema(description = "Liga junto com o dispositivo")
+    @Schema(description = "Liga junto com o PC")
     private boolean autoStart;
 
     @Enumerated(EnumType.STRING)
@@ -124,50 +114,19 @@ public class Machine {
     public Machine() {
     }
 
-    public Machine(MachineRequest request, Device device) {
-        this.device = device;
+    public Machine(MachineRequest request, String drive, String ipAddress, String macAddress) {
         this.name = request.name();
-        this.containerName = CONTAINER_PREFIX + request.name();
+        this.vmName = "bancada-" + request.name();
         this.distribution = request.distribution();
         this.version = request.version();
-        this.image = request.distribution().imageFor(request.version());
-        this.cpuLimit = request.cpuLimit();
-        this.memoryLimitMb = request.memoryLimitMb();
-        this.networkMode = request.networkMode();
-        this.ports = request.networkMode() == MachineNetworkMode.HOST ? new ArrayList<>()
-            : new ArrayList<>(request.ports().stream().map(MachinePort::new).toList());
-        this.volumes = new ArrayList<>(request.volumes().stream().map(MachineVolume::new).toList());
+        this.cpuCount = request.cpuCount();
+        this.memoryMb = request.memoryMb();
+        this.diskGb = request.diskGb();
+        this.drive = drive;
+        this.ipAddress = ipAddress;
+        this.macAddress = macAddress;
         this.username = request.username();
-        this.sshEnabled = request.installSsh();
-        this.sshPort = request.installSsh() ? (request.sshPort() == null ? DEFAULT_SSH_PORT : request.sshPort()) : null;
         this.autoStart = request.autoStart();
-    }
-
-    /** New system for a reinstall; resources, network, folders and user name stay. */
-    public void switchSystem(MachineDistribution distribution, String version) {
-        this.distribution = distribution;
-        this.version = version;
-        this.image = distribution.imageFor(version);
-    }
-
-    /** Local image imported from a machine backup. */
-    public void useImage(String image) {
-        this.image = image;
-    }
-
-    /** Folder of the device shown inside the machine; takes effect when the container is recreated. */
-    public void addVolume(MachineVolume volume) {
-        this.volumes.removeIf(existing -> existing.getContainerPath().equals(volume.getContainerPath()));
-        this.volumes.add(volume);
-    }
-
-    public void removeVolume(String hostPath) {
-        this.volumes.removeIf(existing -> existing.getHostPath().equals(hostPath));
-    }
-
-    public void changeStatus(MachineStatus target) {
-        MachineStatus.validateTransition(this.status, target);
-        this.status = target;
     }
 
     @PrePersist
@@ -182,6 +141,39 @@ public class Machine {
         this.updatedAt = LocalDateTime.now();
     }
 
+    public void attachDevice(Device device, String encryptedHostKey) {
+        this.device = device;
+        this.encryptedHostKey = encryptedHostKey;
+    }
+
+    /** New system for a reinstall; resources, address and user name stay. */
+    public void switchSystem(MachineDistribution distribution, String version) {
+        this.distribution = distribution;
+        this.version = version;
+    }
+
+    public void changeStatus(MachineStatus target) {
+        MachineStatus.validateTransition(this.status, target);
+        this.status = target;
+    }
+
+    /** Folder of the machine on the PC disk: configuration, disk and seed. */
+    public Path folder() {
+        return Paths.get(drive, FOLDER, vmName);
+    }
+
+    public Path diskPath() {
+        return folder().resolve("disco.vhdx");
+    }
+
+    public Path seedPath() {
+        return folder().resolve("cloud-init.iso");
+    }
+
+    public long diskBytes() {
+        return (long) diskGb << 30;
+    }
+
     public Long getId() {
         return id;
     }
@@ -194,8 +186,8 @@ public class Machine {
         return name;
     }
 
-    public String getContainerName() {
-        return containerName;
+    public String getVmName() {
+        return vmName;
     }
 
     public MachineDistribution getDistribution() {
@@ -206,40 +198,36 @@ public class Machine {
         return version;
     }
 
-    public String getImage() {
-        return image;
+    public int getCpuCount() {
+        return cpuCount;
     }
 
-    public Double getCpuLimit() {
-        return cpuLimit;
+    public int getMemoryMb() {
+        return memoryMb;
     }
 
-    public Integer getMemoryLimitMb() {
-        return memoryLimitMb;
+    public int getDiskGb() {
+        return diskGb;
     }
 
-    public MachineNetworkMode getNetworkMode() {
-        return networkMode;
+    public String getDrive() {
+        return drive;
     }
 
-    public List<MachinePort> getPorts() {
-        return ports;
+    public String getIpAddress() {
+        return ipAddress;
     }
 
-    public List<MachineVolume> getVolumes() {
-        return volumes;
+    public String getMacAddress() {
+        return macAddress;
+    }
+
+    public String getEncryptedHostKey() {
+        return encryptedHostKey;
     }
 
     public String getUsername() {
         return username;
-    }
-
-    public boolean isSshEnabled() {
-        return sshEnabled;
-    }
-
-    public Integer getSshPort() {
-        return sshPort;
     }
 
     public boolean isAutoStart() {

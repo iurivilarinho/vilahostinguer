@@ -23,10 +23,4 @@ public final class PlanSpecification {
         return (root, query, builder) -> builder.equal(root.get("active"), active);
     }
 
-    public static Specification<Plan> device(Long deviceId) {
-        if (deviceId == null) {
-            return Specification.where(null);
-        }
-        return (root, query, builder) -> builder.equal(root.get("device").get("id"), deviceId);
-    }
 }

@@ -56,14 +56,16 @@ public class BackupService {
     private final SettingsService settingsService;
     private final SshService sshService;
     private final OperationService operationService;
+    private final HyperVService hyperVService;
 
     public BackupService(BackupRepository backupRepository, DeviceService deviceService, SettingsService settingsService,
-                         SshService sshService, OperationService operationService) {
+                         SshService sshService, OperationService operationService, HyperVService hyperVService) {
         this.backupRepository = backupRepository;
         this.deviceService = deviceService;
         this.settingsService = settingsService;
         this.sshService = sshService;
         this.operationService = operationService;
+        this.hyperVService = hyperVService;
     }
 
     /** A backup interrupted by closing the app can never finish; its partial file is useless. */
@@ -136,26 +138,59 @@ public class BackupService {
         }
         String cleanName = name == null || name.isBlank() ? "Máquina " + machine.getName() : name.trim();
         Path file = Paths.get(settingsService.get().getBackupDirectory(), String.valueOf(machine.getDevice().getId()), "maquinas",
-            FILE_STAMP.format(LocalDateTime.now()) + "-" + slug(machine.getName()) + ".tar.gz");
+            FILE_STAMP.format(LocalDateTime.now()) + "-" + slug(machine.getName()) + ".vhdx");
         return backupRepository.save(new Backup(machine, cleanName, file.toString()));
     }
 
     /**
-     * docker export of the machine, gzip on the device, straight into the file here. The machine is
-     * paused while exporting, so the files are consistent (a copy of a running database is not).
+     * Copy of the machine disk (VHDX), made on this PC. A running machine gets a production
+     * checkpoint first, so the copy is consistent (the guest tools freeze the file systems).
      */
     public int produceMachine(Long backupId, Long operationId) {
         Backup backup = findById(backupId);
-        String script = "name=" + SshService.quote(backup.getMachine().getContainerName()) + "\n"
-            + "docker inspect \"$name\" >/dev/null 2>&1 || { echo 'A máquina não existe no dispositivo.' >&2; exit 2; }\n"
-            + "if [ \"$(docker inspect -f '{{.State.Running}}' \"$name\")\" = true ]; then\n"
-            + "  echo 'Máquina pausada durante a cópia.' >&2\n"
-            + "  docker pause \"$name\" >/dev/null && trap 'docker unpause \"$name\" >/dev/null 2>&1' EXIT\n"
-            + "fi\n"
-            + "set -o pipefail 2>/dev/null\n"
-            + "docker export \"$name\" | gzip -c\n";
-        return produce(backupId, backup.getDevice(), script, "máquina " + backup.getMachine().getName(), Paths.get(backup.getFilePath()),
-            operationId);
+        backup.setOperation(operationService.findById(operationId));
+        backupRepository.save(backup);
+        Machine machine = backup.getMachine();
+        Path file = Paths.get(backup.getFilePath());
+        try {
+            int exitCode = hyperVService.backupDisk(machine.getVmName(), machine.diskPath(), file,
+                chunk -> operationService.appendOutput(operationId, chunk));
+            if (exitCode != 0 || operationService.isCancelRequested(operationId) || !Files.isRegularFile(file)) {
+                markFailed(backupId, file);
+                return exitCode == 0 ? 1 : exitCode;
+            }
+            operationService.appendOutput(operationId, "== Conferindo a cópia ==\n");
+            long size = Files.size(file);
+            Backup done = findById(backupId);
+            done.complete(size, sha256(file));
+            backupRepository.save(done);
+            operationService.appendOutput(operationId, "== Backup salvo (" + String.format("%,.1f MB", size / 1_048_576.0) + ") ==\n");
+            return 0;
+        } catch (IOException exception) {
+            operationService.appendOutput(operationId, "Erro ao gravar o arquivo: " + exception.getMessage() + "\n");
+            markFailed(backupId, file);
+            return 1;
+        } catch (RuntimeException exception) {
+            markFailed(backupId, file);
+            throw exception;
+        }
+    }
+
+    private static String sha256(Path file) throws IOException {
+        MessageDigest digest;
+        try {
+            digest = MessageDigest.getInstance("SHA-256");
+        } catch (NoSuchAlgorithmException exception) {
+            throw new IllegalStateException(exception);
+        }
+        try (InputStream input = Files.newInputStream(file)) {
+            byte[] buffer = new byte[1 << 16];
+            int count;
+            while ((count = input.read(buffer)) > 0) {
+                digest.update(buffer, 0, count);
+            }
+        }
+        return HexFormat.of().formatHex(digest.digest());
     }
 
     public Operation restore(Long id) {

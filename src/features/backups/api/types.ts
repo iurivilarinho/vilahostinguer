@@ -6,7 +6,7 @@ export type BackupStatus = "CREATING" | "AVAILABLE" | "FAILED" | "DISCARDED";
 export type BackupDto = {
   id: number;
   device: DeviceBasicDto;
-  machine: { id: number; name: string; networkMode: "BRIDGE" | "HOST"; status: string } | null;
+  machine: { id: number; name: string; ipAddress: string; status: string } | null;
   kind: BackupKind;
   kindDescription: string;
   operationId: number | null;

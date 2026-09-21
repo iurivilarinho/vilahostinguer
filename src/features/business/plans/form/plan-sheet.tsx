@@ -1,12 +1,9 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useEffect } from "react";
 import { useForm } from "react-hook-form";
-import { AppSheet, Button, FieldWrapper, Input, Select, Switch, Textarea, Typography } from "@/components";
-import { useDevicesQuery } from "@/features/devices/api";
+import { AppSheet, Button, FieldWrapper, Input, Switch, Textarea, Typography } from "@/components";
 import { useSavePlanMutation, type PlanDto } from "../api";
 import { DEFAULT_PLAN_FORM_VALUES, planFormSchema, type PlanFormValues } from "./schema";
-
-const DEVICES_PARAMS = { page: 0, size: 100, filter: { active: true } };
 
 type PlanSheetProps = {
   open: boolean;
@@ -37,7 +34,6 @@ export const PlanSheet = ({ open, onOpenChange, plan }: PlanSheetProps) => {
     setValue,
     formState: { errors },
   } = useForm<PlanFormValues>({ resolver: zodResolver(planFormSchema), defaultValues: DEFAULT_PLAN_FORM_VALUES });
-  const { data: devices } = useDevicesQuery(DEVICES_PARAMS, { enabled: open });
   const { mutateAsync: save, isPending } = useSavePlanMutation();
 
   useEffect(() => {
@@ -49,7 +45,6 @@ export const PlanSheet = ({ open, onOpenChange, plan }: PlanSheetProps) => {
         ? {
             name: plan.name,
             description: plan.description ?? "",
-            deviceId: String(plan.device.id),
             cpuLimit: plan.cpuLimit,
             memoryMb: plan.memoryMb,
             diskGb: plan.diskGb,
@@ -64,8 +59,7 @@ export const PlanSheet = ({ open, onOpenChange, plan }: PlanSheetProps) => {
   }, [open, plan, reset]);
 
   const onSubmit = async (values: PlanFormValues) => {
-    const payload = { ...values, deviceId: Number(values.deviceId) };
-    await save(plan ? { id: plan.id, ...payload } : payload);
+    await save(plan ? { id: plan.id, ...values } : values);
     onOpenChange(false);
   };
 
@@ -93,19 +87,9 @@ export const PlanSheet = ({ open, onOpenChange, plan }: PlanSheetProps) => {
         <FieldWrapper label="Descrição" htmlFor="plan-description" error={errors.description?.message}>
           <Textarea id="plan-description" rows={2} placeholder="Para sites e APIs pequenas" {...register("description")} />
         </FieldWrapper>
-        <FieldWrapper label="Dispositivo que hospeda" htmlFor="plan-device" error={errors.deviceId?.message} description="Os servidores deste plano são criados nele.">
-          <Select id="plan-device" {...register("deviceId")}>
-            <option value="">Escolha</option>
-            {devices?.data.map((device) => (
-              <option key={device.id} value={String(device.id)}>
-                {device.name} ({device.architecture ?? "?"})
-              </option>
-            ))}
-          </Select>
-        </FieldWrapper>
         <div className="grid gap-4 sm:grid-cols-3">
-          <FieldWrapper label="CPUs" htmlFor="plan-cpu" error={errors.cpuLimit?.message}>
-            <Input id="plan-cpu" type="number" step="0.1" {...register("cpuLimit")} />
+          <FieldWrapper label="Processadores" htmlFor="plan-cpu" error={errors.cpuLimit?.message}>
+            <Input id="plan-cpu" type="number" step="1" {...register("cpuLimit")} />
           </FieldWrapper>
           <FieldWrapper label="Memória (MB)" htmlFor="plan-memory" error={errors.memoryMb?.message}>
             <Input id="plan-memory" type="number" {...register("memoryMb")} />

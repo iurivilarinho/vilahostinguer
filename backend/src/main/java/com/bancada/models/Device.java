@@ -216,8 +216,11 @@ public class Device {
 
     public void markSeen(String host, ConnectionType connectionType, String interfaceName) {
         this.host = host;
-        this.connectionType = connectionType;
-        this.interfaceName = interfaceName;
+        // a virtual machine of this PC stays one, whatever interface the scan found it on
+        if (this.connectionType != ConnectionType.VIRTUAL) {
+            this.connectionType = connectionType;
+            this.interfaceName = interfaceName;
+        }
         this.online = true;
         this.lastSeenAt = LocalDateTime.now();
     }

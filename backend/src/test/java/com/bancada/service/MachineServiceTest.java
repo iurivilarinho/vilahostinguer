@@ -1,158 +1,107 @@
 package com.bancada.service;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyBoolean;
-import static org.mockito.ArgumentMatchers.anyString;
-import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-import com.bancada.enums.ConnectionType;
 import com.bancada.enums.MachineDistribution;
-import com.bancada.enums.MachineNetworkMode;
 import com.bancada.enums.MachineStatus;
-import com.bancada.enums.OperationType;
-import com.bancada.models.Device;
 import com.bancada.models.Machine;
-import com.bancada.models.Operation;
-import com.bancada.records.DeviceFacts;
+import com.bancada.records.HyperVStatus;
 import com.bancada.repository.MachineRepository;
-import com.bancada.request.MachinePortRequest;
 import com.bancada.request.MachineRequest;
-import com.bancada.request.MachineVolumeRequest;
 import java.util.List;
-import java.util.Optional;
-import java.util.function.ToIntFunction;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.ArgumentCaptor;
-import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.mockito.junit.jupiter.MockitoSettings;
-import org.mockito.quality.Strictness;
 import org.springframework.context.ApplicationEventPublisher;
 
 @ExtendWith(MockitoExtension.class)
-@MockitoSettings(strictness = Strictness.LENIENT)
 class MachineServiceTest {
+
+    private static final HyperVStatus READY = new HyperVStatus(true, true, true, 16_384, 12, null, "Bancada", "10.77.0.0/24");
 
     @Mock
     private MachineRepository machineRepository;
-
+    @Mock
+    private HyperVService hyperVService;
+    @Mock
+    private MachineImageService machineImageService;
+    @Mock
+    private HostDiskService hostDiskService;
     @Mock
     private DeviceService deviceService;
-
+    @Mock
+    private CredentialService credentialService;
     @Mock
     private SshService sshService;
-
     @Mock
     private OperationService operationService;
-
     @Mock
     private ApplicationEventPublisher applicationEventPublisher;
+    @Mock
+    private SecretCipherService secretCipherService;
 
-    @InjectMocks
     private MachineService machineService;
-
-    private final Device phone = new Device("169.254.1.1", 22, "SHA256:abc", "ssh-ed25519", ConnectionType.USB, null);
 
     @BeforeEach
     void setUp() {
-        phone.applyFacts(new DeviceFacts("j4", "postmarketOS", "edge", "3.18.140", "aarch64", null, 4, null, null, null, null,
-            "apk", "openrc", "/root", true));
-        when(deviceService.requireReady(1L)).thenReturn(phone);
-        when(machineRepository.save(any(Machine.class))).thenAnswer(invocation -> invocation.getArgument(0));
-        when(operationService.start(any(), any(), anyString(), anyString(), any())).thenReturn(new Operation());
+        machineService = new MachineService(machineRepository, hyperVService, machineImageService, hostDiskService, deviceService,
+            credentialService, sshService, operationService, applicationEventPublisher, secretCipherService, 4096);
     }
 
-    private MachineRequest request(MachineDistribution distribution, String version, MachineNetworkMode network, Integer sshPort,
-                                   String password) {
-        return new MachineRequest(1L, "web-teste", distribution, version, 1.5, 512, network,
-            List.of(new MachinePortRequest(8080, 80, "tcp")), List.of(new MachineVolumeRequest("/srv/sites", "/var/www")),
-            "iuri", password, true, sshPort, true);
+    private static MachineRequest request(String name, int cpus, int memoryMb) {
+        return new MachineRequest(name, MachineDistribution.UBUNTU, "24.04", cpus, memoryMb, 20, null, "admin", "segredo", true);
     }
 
-    @SuppressWarnings("unchecked")
-    private String creationScript(MachineRequest request) {
-        machineService.create(request);
-        ArgumentCaptor<ToIntFunction<Long>> work = ArgumentCaptor.forClass(ToIntFunction.class);
-        verify(operationService).start(eq(phone), eq(OperationType.MACHINE_CREATE), anyString(), anyString(), work.capture());
-        when(machineRepository.findById(any())).thenReturn(Optional.of(new Machine(request, phone)));
-        ArgumentCaptor<String> script = ArgumentCaptor.forClass(String.class);
-        when(sshService.stream(eq(phone), script.capture(), anyBoolean(), any(), any())).thenReturn(0);
-        work.getValue().applyAsInt(7L);
-        return script.getValue();
+    private static Machine existing(String name, int memoryMb, String address) {
+        Machine machine = new Machine(request(name, 1, memoryMb), "D:\\", address, MachineService.macFor(address));
+        machine.changeStatus(MachineStatus.RUNNING);
+        return machine;
     }
 
     @Test
-    void refusesADistributionWithoutImageForTheProcessor() {
-        MachineRequest arch = request(MachineDistribution.ARCH, "latest", MachineNetworkMode.HOST, 2201, "segredo");
-
-        assertThrows(IllegalArgumentException.class, () -> machineService.create(arch));
-        verify(machineRepository, never()).save(any(Machine.class));
+    void macAddressIsTheHyperVRangeWithTheMachineAddress() {
+        assertEquals("00:15:5D:4D:00:0A", MachineService.macFor("10.77.0.10"));
+        assertEquals("00:15:5D:4D:00:FE", MachineService.macFor("10.77.0.254"));
     }
 
     @Test
-    void refusesSshOnPort22OnTheDeviceNetwork() {
-        MachineRequest clash = request(MachineDistribution.ALPINE, "3.22", MachineNetworkMode.HOST, 22, "segredo");
+    void creationStopsBeforeAnythingWhenHyperVIsNotReady() {
+        when(hyperVService.requireReady()).thenThrow(new IllegalStateException("O Hyper-V não está ativo neste PC."));
 
-        assertThrows(IllegalArgumentException.class, () -> machineService.create(clash));
+        assertThrows(IllegalStateException.class, () -> machineService.create(request("web", 2, 2048)));
+        verify(machineRepository, never()).save(any());
+        verify(credentialService, never()).create(any());
     }
 
     @Test
-    void hostNetworkScriptHasLimitsSshPortAndNoPortMapping() {
-        String script = creationScript(request(MachineDistribution.UBUNTU, "24.04", MachineNetworkMode.HOST, 2201, "segredo"));
+    void memoryLeftForWindowsAndOtherMachinesIsNeverPromised() {
+        when(machineRepository.findByStatusNot(MachineStatus.REMOVED))
+            .thenReturn(List.of(existing("a", 4096, "10.77.0.10"), existing("b", 4096, "10.77.0.11")));
 
-        assertTrue(script.contains("docker pull 'ubuntu:24.04'"));
-        assertTrue(script.contains("--network host"));
-        assertTrue(script.contains("--cpus 1.50"));
-        assertTrue(script.contains("--memory 512m"));
-        assertTrue(script.contains("--restart unless-stopped"));
-        assertTrue(script.contains("-v '/srv/sites:/var/www'"));
-        assertTrue(script.contains("Port 2201"));
-        assertTrue(script.contains("chown iuri: "), "an empty shared folder goes to the machine user");
-        assertTrue(script.contains("docker info 2>&1 | grep -q 'No cpu cfs quota'"));
-        assertFalse(script.contains(" -p 8080:80/tcp"), "port mappings make no sense on the host network");
+        // 16 GB - 4 GB for Windows - 8 GB of machines = 4 GB left
+        machineService.requireCapacity(READY, 2, 4096);
+        IllegalStateException refused = assertThrows(IllegalStateException.class, () -> machineService.requireCapacity(READY, 2, 4097));
+        assertTrue(refused.getMessage().contains("sobram 4096 MB"), refused.getMessage());
+        assertThrows(IllegalArgumentException.class, () -> machineService.requireCapacity(READY, 13, 512));
     }
 
     @Test
-    void passwordWithQuotesIsSafelyQuotedForTheShell() {
-        String script = creationScript(request(MachineDistribution.DEBIAN, "12", MachineNetworkMode.BRIDGE, 22, "it's $HOME"));
-
-        assertTrue(script.contains("printf '%s:%s\\n' 'iuri' 'it'\\''s $HOME' | docker exec -i 'bancada-web-teste' chpasswd"));
-        assertTrue(script.contains(" -p 8080:80/tcp"));
+    void onlyOfferedVersionsAreAccepted() {
+        machineService.validateSystem(MachineDistribution.DEBIAN, "12");
+        assertThrows(IllegalArgumentException.class, () -> machineService.validateSystem(MachineDistribution.DEBIAN, "10"));
     }
 
     @Test
-    void operationThatDoesNotStartReleasesTheName() {
-        MachineRequest request = request(MachineDistribution.ALPINE, "3.22", MachineNetworkMode.HOST, 2201, "segredo");
-        Machine stored = new Machine(request, phone);
-        when(machineRepository.findById(any())).thenReturn(Optional.of(stored));
-        when(operationService.start(any(), any(), anyString(), anyString(), any())).thenThrow(new IllegalStateException("banco recusou"));
-
-        assertThrows(IllegalStateException.class, () -> machineService.create(request));
-        assertEquals(MachineStatus.REMOVED, stored.getStatus());
-    }
-
-    @Test
-    void failedCreationMarksTheMachineAsFailed() {
-        MachineRequest request = request(MachineDistribution.ALPINE, "3.22", MachineNetworkMode.HOST, 2201, "segredo");
-        Machine stored = new Machine(request, phone);
-        machineService.create(request);
-        @SuppressWarnings("unchecked")
-        ArgumentCaptor<ToIntFunction<Long>> work = ArgumentCaptor.forClass(ToIntFunction.class);
-        verify(operationService).start(eq(phone), eq(OperationType.MACHINE_CREATE), anyString(), anyString(), work.capture());
-        when(machineRepository.findById(any())).thenReturn(Optional.of(stored));
-        when(sshService.stream(eq(phone), anyString(), anyBoolean(), any(), any())).thenThrow(new IllegalStateException("cabo saiu"));
-
-        assertThrows(IllegalStateException.class, () -> work.getValue().applyAsInt(7L));
-        assertEquals(MachineStatus.FAILED, stored.getStatus());
+    void distributionsListNewestVersionFirst() {
+        assertEquals(List.of("24.04", "22.04"), MachineDistribution.UBUNTU.getVersions());
+        assertEquals(List.of("13", "12"), MachineDistribution.DEBIAN.getVersions());
     }
 }
