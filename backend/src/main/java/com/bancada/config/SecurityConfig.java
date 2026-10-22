@@ -2,6 +2,7 @@ package com.bancada.config;
 
 import com.bancada.repository.CustomerRepository;
 import com.bancada.service.PortalTokenService;
+import com.bancada.turnstile.TurnstileFilter;
 import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;
 import java.time.LocalDateTime;
@@ -32,7 +33,7 @@ public class SecurityConfig {
 
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http, PortalTokenService portalTokenService,
-                                                   CustomerRepository customerRepository) throws Exception {
+                                                   CustomerRepository customerRepository, TurnstileFilter turnstileFilter) throws Exception {
         http.csrf(AbstractHttpConfigurer::disable)
             .cors(Customizer.withDefaults())
             .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
@@ -50,7 +51,8 @@ public class SecurityConfig {
                     writeError(response, HttpServletResponse.SC_UNAUTHORIZED, "Sua sessão expirou. Entre de novo."))
                 .accessDeniedHandler((request, response, exception) ->
                     writeError(response, HttpServletResponse.SC_FORBIDDEN, "Sem permissão para esta ação.")))
-            .addFilterBefore(new PortalJwtFilter(portalTokenService, customerRepository), UsernamePasswordAuthenticationFilter.class);
+            .addFilterBefore(new PortalJwtFilter(portalTokenService, customerRepository), UsernamePasswordAuthenticationFilter.class)
+            .addFilterBefore(turnstileFilter, UsernamePasswordAuthenticationFilter.class);
         return http.build();
     }
 

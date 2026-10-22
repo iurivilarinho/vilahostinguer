@@ -68,4 +68,14 @@ bancada:
     # disk was given to is served.
     port: ${BANCADA_NBD_PORT:10809}
 
+# Cloudflare Turnstile (PLT-033): off until both keys are set. Only the customer panel has a web
+# login; the administrator window is the Tauri shell and has none.
+turnstile:
+  site-key: ${TURNSTILE_SITE_KEY:}
+  secret-key: ${TURNSTILE_SECRET_KEY:}
+  config-path: /api/portal/public/turnstile
+  protected-paths:
+    - /api/portal/auth/login
+    - /api/portal/auth/register
+
 parent-pid: 0
