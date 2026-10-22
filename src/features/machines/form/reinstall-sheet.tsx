@@ -2,7 +2,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { AlertTriangle } from "lucide-react";
 import { useEffect } from "react";
 import { useForm } from "react-hook-form";
-import { AppSheet, Button, FieldWrapper, Input, Select, Switch, Typography } from "@/components";
+import { AppSheet, Button, FieldWrapper, PasswordInput, Select, Switch, Typography } from "@/components";
 import { openOperationViewer } from "@/features/operations";
 import { useDistributionsQuery, useReinstallMachineMutation, type MachineDto } from "../api";
 import { DEFAULT_REINSTALL_FORM_VALUES, reinstallFormSchema, type ReinstallFormValues } from "./reinstall-schema";
@@ -95,10 +95,10 @@ export const ReinstallSheet = ({ machine, onClose }: ReinstallSheetProps) => {
           </FieldWrapper>
         </div>
         <FieldWrapper label={`Nova senha de ${machine?.username ?? "usuário"} (e do sudo)`} htmlFor="reinstall-password" error={errors.password?.message}>
-          <Input id="reinstall-password" type="password" autoComplete="new-password" {...register("password")} aria-invalid={Boolean(errors.password)} />
+          <PasswordInput id="reinstall-password" autoComplete="new-password" {...register("password")} aria-invalid={Boolean(errors.password)} />
         </FieldWrapper>
         <FieldWrapper label="Repita a senha" htmlFor="reinstall-confirmation" error={errors.confirmation?.message}>
-          <Input id="reinstall-confirmation" type="password" autoComplete="new-password" {...register("confirmation")} aria-invalid={Boolean(errors.confirmation)} />
+          <PasswordInput id="reinstall-confirmation" autoComplete="new-password" {...register("confirmation")} aria-invalid={Boolean(errors.confirmation)} />
         </FieldWrapper>
         <div className="flex items-start justify-between gap-4 rounded-lg border border-border p-4">
           <div className="flex flex-col gap-1">

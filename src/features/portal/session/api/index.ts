@@ -6,5 +6,6 @@ export {
   useRegisterMutation,
   useSessionQuery,
   useUpdateProfileMutation,
+  loadTurnstileConfig,
 } from "./service";
 export type * from "./types";

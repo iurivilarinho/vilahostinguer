@@ -1,10 +1,11 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm } from "react-hook-form";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
-import { Button, FieldWrapper, Input, Switch, Typography } from "@/components";
+import { Button, FieldWrapper, Input, PasswordInput, Switch, Typography } from "@/components";
+import { TurnstileWidget, useTurnstile } from "@/components/turnstile";
 import { RotasPortal } from "@/app/variables/rotas-portal";
 import { usePortalInfoQuery } from "../../catalog/api";
-import { useRegisterMutation } from "../api";
+import { loadTurnstileConfig, useRegisterMutation } from "../api";
 import { AuthCard } from "../components/auth-card";
 import { DEFAULT_REGISTER_VALUES, registerSchema, type RegisterFormValues } from "../form/schemas";
 import { safeReturnPath } from "../utils/safe-return-path";
@@ -21,7 +22,12 @@ export const PageRegister = () => {
     setValue,
     formState: { errors },
   } = useForm<RegisterFormValues>({ resolver: zodResolver(registerSchema), defaultValues: DEFAULT_REGISTER_VALUES });
-  const { mutate: createAccount, isPending } = useRegisterMutation({ onSuccess: () => navigate(returnTo, { replace: true }) });
+  const turnstile = useTurnstile(loadTurnstileConfig);
+  // O token vale uma vez: depois de uma tentativa que falhou, pede outro.
+  const { mutate: createAccount, isPending } = useRegisterMutation({
+    onSuccess: () => navigate(returnTo, { replace: true }),
+    onError: () => turnstile.reset(),
+  });
 
   if (info && !info.registrationOpen) {
     return (
@@ -56,6 +62,7 @@ export const PageRegister = () => {
             phone: values.phone,
             document: values.document,
             acceptTerms: values.acceptTerms,
+            turnstileToken: turnstile.token,
           }),
         )}
       >
@@ -74,10 +81,10 @@ export const PageRegister = () => {
           </FieldWrapper>
         </div>
         <FieldWrapper label="Senha" htmlFor="register-password" error={errors.password?.message} description="Mínimo de 8 caracteres">
-          <Input id="register-password" type="password" autoComplete="new-password" {...register("password")} aria-invalid={Boolean(errors.password)} />
+          <PasswordInput id="register-password" autoComplete="new-password" {...register("password")} aria-invalid={Boolean(errors.password)} />
         </FieldWrapper>
         <FieldWrapper label="Repita a senha" htmlFor="register-confirmation" error={errors.confirmation?.message}>
-          <Input id="register-confirmation" type="password" autoComplete="new-password" {...register("confirmation")} />
+          <PasswordInput id="register-confirmation" autoComplete="new-password" {...register("confirmation")} />
         </FieldWrapper>
         <div className="flex flex-col gap-1">
           <label htmlFor="register-terms" className="flex items-center gap-3">
@@ -92,7 +99,8 @@ export const PageRegister = () => {
             </Typography>
           )}
         </div>
-        <Button type="submit" size="lg" loading={isPending}>
+        {turnstile.enabled && <TurnstileWidget {...turnstile.widgetProps} />}
+        <Button type="submit" size="lg" loading={isPending} disabled={!turnstile.ready}>
           Criar conta
         </Button>
       </form>

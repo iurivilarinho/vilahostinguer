@@ -2,7 +2,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { AlertTriangle, Disc3 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useForm } from "react-hook-form";
-import { Button, Card, CardContent, CardHeader, ConfirmDialog, FieldWrapper, Input, Select, Switch, Typography } from "@/components";
+import { Button, Card, CardContent, CardHeader, ConfirmDialog, FieldWrapper, PasswordInput, Select, Switch, Typography } from "@/components";
 import { OptionCard } from "../../checkout/components/option-card";
 import { useReinstallServerMutation, useServerDistributionsQuery, type ServerDto } from "../api";
 import { reinstallSchema, type ReinstallFormValues } from "../form/schemas";
@@ -80,10 +80,10 @@ export const SectionOs = ({ server, onOperation }: SectionOsProps) => {
             </FieldWrapper>
             <div className="grid gap-4 sm:grid-cols-2">
               <FieldWrapper label={`Nova senha de ${server.username}`} htmlFor="os-password" error={errors.password?.message}>
-                <Input id="os-password" type="password" autoComplete="new-password" {...register("password")} disabled={!active} />
+                <PasswordInput id="os-password" autoComplete="new-password" {...register("password")} disabled={!active} />
               </FieldWrapper>
               <FieldWrapper label="Repita a senha" htmlFor="os-confirmation" error={errors.confirmation?.message}>
-                <Input id="os-confirmation" type="password" autoComplete="new-password" {...register("confirmation")} disabled={!active} />
+                <PasswordInput id="os-confirmation" autoComplete="new-password" {...register("confirmation")} disabled={!active} />
               </FieldWrapper>
             </div>
             <label htmlFor="os-backup" className="flex items-center gap-3">

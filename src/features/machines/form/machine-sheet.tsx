@@ -1,7 +1,7 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useEffect } from "react";
 import { useForm } from "react-hook-form";
-import { AppSheet, Button, FieldWrapper, Input, Select, Switch, Typography } from "@/components";
+import { AppSheet, Button, FieldWrapper, Input, PasswordInput, Select, Switch, Typography } from "@/components";
 import { openOperationViewer } from "@/features/operations";
 import { formatBytes } from "@/lib/format";
 import { useCreateMachineMutation, useDistributionsQuery, useMachineHostQuery } from "../api";
@@ -138,7 +138,7 @@ export const MachineSheet = ({ open, onOpenChange }: MachineSheetProps) => {
             <Input id="machine-user" placeholder="admin" autoComplete="off" {...register("username")} aria-invalid={Boolean(errors.username)} />
           </FieldWrapper>
           <FieldWrapper label="Senha (SSH e sudo)" htmlFor="machine-password" error={errors.password?.message}>
-            <Input id="machine-password" type="password" autoComplete="new-password" {...register("password")} aria-invalid={Boolean(errors.password)} />
+            <PasswordInput id="machine-password" autoComplete="new-password" {...register("password")} aria-invalid={Boolean(errors.password)} />
           </FieldWrapper>
         </div>
 

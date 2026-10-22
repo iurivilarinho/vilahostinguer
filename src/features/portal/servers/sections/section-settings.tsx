@@ -2,7 +2,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { useNavigate } from "react-router-dom";
-import { Button, Card, CardContent, CardHeader, ConfirmDialog, FieldWrapper, Input, Textarea, Typography } from "@/components";
+import { Button, Card, CardContent, CardHeader, ConfirmDialog, FieldWrapper, PasswordInput, Textarea, Typography } from "@/components";
 import { RotasPortal } from "@/app/variables/rotas-portal";
 import { formatDate } from "@/lib/format";
 import { useCancelSubscriptionMutation, useKeepSubscriptionMutation } from "../../billing/api";
@@ -44,10 +44,10 @@ export const SectionSettings = ({ server }: { server: ServerDto }) => {
             onSubmit={passwordForm.handleSubmit((values) => changePassword({ id: server.id, password: values.password }))}
           >
             <FieldWrapper label="Nova senha" htmlFor="server-password" error={passwordForm.formState.errors.password?.message}>
-              <Input id="server-password" type="password" autoComplete="new-password" {...passwordForm.register("password")} disabled={!active} />
+              <PasswordInput id="server-password" autoComplete="new-password" {...passwordForm.register("password")} disabled={!active} />
             </FieldWrapper>
             <FieldWrapper label="Repita a senha" htmlFor="server-password-confirmation" error={passwordForm.formState.errors.confirmation?.message}>
-              <Input id="server-password-confirmation" type="password" autoComplete="new-password" {...passwordForm.register("confirmation")} disabled={!active} />
+              <PasswordInput id="server-password-confirmation" autoComplete="new-password" {...passwordForm.register("confirmation")} disabled={!active} />
             </FieldWrapper>
             <Button type="submit" loading={isChanging} disabled={!active}>
               Trocar senha

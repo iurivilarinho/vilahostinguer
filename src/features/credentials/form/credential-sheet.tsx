@@ -1,7 +1,7 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useEffect } from "react";
 import { useForm } from "react-hook-form";
-import { AppSheet, Button, FieldWrapper, Input, Select, Switch, Textarea, Typography } from "@/components";
+import { AppSheet, Button, FieldWrapper, Input, PasswordInput, Select, Switch, Textarea, Typography } from "@/components";
 import { useCreateCredentialMutation, useUpdateCredentialMutation, type CredentialDto } from "../api";
 import { credentialFormSchema, DEFAULT_CREDENTIAL_FORM_VALUES, type CredentialFormValues } from "./schema";
 
@@ -100,7 +100,7 @@ export const CredentialSheet = ({ open, onOpenChange, credential }: CredentialSh
             error={errors.secret?.message}
             description={mode === "edit" ? "Deixe em branco para manter a atual" : undefined}
           >
-            <Input id="credential-secret" type="password" autoComplete="new-password" {...register("secret")} aria-invalid={Boolean(errors.secret)} />
+            <PasswordInput id="credential-secret" autoComplete="new-password" {...register("secret")} aria-invalid={Boolean(errors.secret)} />
           </FieldWrapper>
         ) : (
           <>
@@ -121,7 +121,7 @@ export const CredentialSheet = ({ open, onOpenChange, credential }: CredentialSh
               />
             </FieldWrapper>
             <FieldWrapper label="Senha da chave" htmlFor="credential-passphrase" description="Só se a chave tiver senha">
-              <Input id="credential-passphrase" type="password" autoComplete="new-password" {...register("passphrase")} />
+              <PasswordInput id="credential-passphrase" autoComplete="new-password" {...register("passphrase")} />
             </FieldWrapper>
           </>
         )}

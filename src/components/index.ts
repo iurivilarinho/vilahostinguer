@@ -11,6 +11,7 @@ export { FieldWrapper } from "./field-wrapper";
 export { FileUI } from "./file-ui";
 export { Input } from "./input";
 export { LogViewer } from "./log-viewer";
+export { PasswordInput } from "./password-input";
 export { PageHeader } from "./page-header";
 export { Progress } from "./progress";
 export { QueryErrorState } from "./query-error-state";

@@ -2,7 +2,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { ExternalLink, Lock, ShieldCheck } from "lucide-react";
 import { useEffect } from "react";
 import { useForm } from "react-hook-form";
-import { Badge, Button, Card, CardContent, CardFooter, CardHeader, FieldWrapper, Input, PageHeader, QueryErrorState, Skeleton, Switch, Textarea, Typography } from "@/components";
+import { Badge, Button, Card, CardContent, CardFooter, CardHeader, FieldWrapper, Input, PageHeader, PasswordInput, QueryErrorState, Skeleton, Switch, Textarea, Typography } from "@/components";
 import { getApiErrorMessage } from "@/app/utils/get-api-error-message";
 import { formatDateTime } from "@/lib/format";
 import { useIssueCertificateMutation, usePortalSettingsQuery, useSavePortalSettingsMutation, type CertificateStatus, type PortalSettingsDto } from "../api";
@@ -155,7 +155,7 @@ export const PagePortalSettings = () => {
                   : "Com ele, o cliente paga por Pix e a confirmação é automática. Sem ele, você confirma cada pagamento à mão."
               }
             >
-              <Input id="portal-mp" type="password" autoComplete="off" placeholder="APP_USR-..." {...register("mercadoPagoAccessToken")} />
+              <PasswordInput id="portal-mp" autoComplete="off" placeholder="APP_USR-..." {...register("mercadoPagoAccessToken")} />
             </FieldWrapper>
             {settings.mercadoPagoConfigured && (
               <label htmlFor="portal-mp-remove" className="flex items-center gap-3">

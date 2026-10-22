@@ -3,7 +3,7 @@ import { ShieldCheck } from "lucide-react";
 import { useEffect } from "react";
 import { useForm } from "react-hook-form";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
-import { Badge, Button, Card, FieldWrapper, Input, QueryErrorState, Select, Skeleton, Typography } from "@/components";
+import { Badge, Button, Card, FieldWrapper, Input, PasswordInput, QueryErrorState, Select, Skeleton, Typography } from "@/components";
 import { getApiErrorMessage } from "@/app/utils/get-api-error-message";
 import { RotasPortal } from "@/app/variables/rotas-portal";
 import { formatCurrency } from "@/lib/format";
@@ -145,10 +145,10 @@ export const PageCheckout = () => {
           </FieldWrapper>
           <div className="grid gap-4 sm:grid-cols-2">
             <FieldWrapper label="Senha" htmlFor="checkout-password" error={errors.password?.message}>
-              <Input id="checkout-password" type="password" autoComplete="new-password" {...register("password")} aria-invalid={Boolean(errors.password)} />
+              <PasswordInput id="checkout-password" autoComplete="new-password" {...register("password")} aria-invalid={Boolean(errors.password)} />
             </FieldWrapper>
             <FieldWrapper label="Repita a senha" htmlFor="checkout-confirmation" error={errors.confirmation?.message}>
-              <Input id="checkout-confirmation" type="password" autoComplete="new-password" {...register("confirmation")} />
+              <PasswordInput id="checkout-confirmation" autoComplete="new-password" {...register("confirmation")} />
             </FieldWrapper>
           </div>
           <Typography variant="caption" as="p">

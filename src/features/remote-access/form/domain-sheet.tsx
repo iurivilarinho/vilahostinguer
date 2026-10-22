@@ -1,7 +1,7 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useEffect } from "react";
 import { useForm } from "react-hook-form";
-import { AppSheet, Button, FieldWrapper, Input, Select, Typography } from "@/components";
+import { AppSheet, Button, FieldWrapper, Input, PasswordInput, Select, Typography } from "@/components";
 import { useCreateDomainMutation, useUpdateDomainMutation, type DnsProvider, type DomainDto } from "../api";
 import { SwitchRow } from "../components/switch-row";
 import { DEFAULT_DOMAIN_FORM_VALUES, domainFormSchema, type DomainFormValues } from "./domain-schema";
@@ -148,9 +148,8 @@ export const DomainSheet = ({ open, onOpenChange, domain }: DomainSheetProps) =>
             error={errors.secret?.message}
             description={keepSecret ? "Deixe em branco para manter o atual" : help.secretDescription}
           >
-            <Input
+            <PasswordInput
               id="domain-secret"
-              type="password"
               autoComplete="off"
               placeholder={help.secretPlaceholder}
               className="font-mono"

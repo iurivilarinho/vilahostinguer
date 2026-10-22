@@ -1,7 +1,7 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useEffect } from "react";
 import { useForm } from "react-hook-form";
-import { Button, Card, CardContent, CardHeader, FieldWrapper, Input, PageHeader, Typography } from "@/components";
+import { Button, Card, CardContent, CardHeader, FieldWrapper, Input, PageHeader, PasswordInput, Typography } from "@/components";
 import { useChangePasswordMutation, useSessionQuery, useUpdateProfileMutation } from "../../session/api";
 import {
   DEFAULT_PASSWORD_VALUES,
@@ -70,13 +70,13 @@ export const PageAccount = () => {
             onSubmit={passwordForm.handleSubmit((values) => changePassword({ currentPassword: values.currentPassword, newPassword: values.newPassword }))}
           >
             <FieldWrapper label="Senha atual" htmlFor="account-current" error={passwordForm.formState.errors.currentPassword?.message}>
-              <Input id="account-current" type="password" autoComplete="current-password" {...passwordForm.register("currentPassword")} />
+              <PasswordInput id="account-current" autoComplete="current-password" {...passwordForm.register("currentPassword")} />
             </FieldWrapper>
             <FieldWrapper label="Nova senha" htmlFor="account-new" error={passwordForm.formState.errors.newPassword?.message}>
-              <Input id="account-new" type="password" autoComplete="new-password" {...passwordForm.register("newPassword")} />
+              <PasswordInput id="account-new" autoComplete="new-password" {...passwordForm.register("newPassword")} />
             </FieldWrapper>
             <FieldWrapper label="Repita a nova senha" htmlFor="account-confirmation" error={passwordForm.formState.errors.confirmation?.message}>
-              <Input id="account-confirmation" type="password" autoComplete="new-password" {...passwordForm.register("confirmation")} />
+              <PasswordInput id="account-confirmation" autoComplete="new-password" {...passwordForm.register("confirmation")} />
             </FieldWrapper>
             <div className="sm:col-span-3">
               <Button type="submit" loading={isChanging}>

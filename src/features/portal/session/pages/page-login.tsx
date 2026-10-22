@@ -1,9 +1,10 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm } from "react-hook-form";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
-import { Button, FieldWrapper, Input, Typography } from "@/components";
+import { Button, FieldWrapper, Input, PasswordInput, Typography } from "@/components";
+import { TurnstileWidget, useTurnstile } from "@/components/turnstile";
 import { RotasPortal } from "@/app/variables/rotas-portal";
-import { useLoginMutation } from "../api";
+import { loadTurnstileConfig, useLoginMutation } from "../api";
 import { AuthCard } from "../components/auth-card";
 import { DEFAULT_LOGIN_VALUES, loginSchema, type LoginFormValues } from "../form/schemas";
 import { safeReturnPath } from "../utils/safe-return-path";
@@ -17,7 +18,12 @@ export const PageLogin = () => {
     handleSubmit,
     formState: { errors },
   } = useForm<LoginFormValues>({ resolver: zodResolver(loginSchema), defaultValues: DEFAULT_LOGIN_VALUES });
-  const { mutate: login, isPending } = useLoginMutation({ onSuccess: () => navigate(returnTo, { replace: true }) });
+  const turnstile = useTurnstile(loadTurnstileConfig);
+  // O token vale uma vez: depois de uma tentativa que falhou, pede outro.
+  const { mutate: login, isPending } = useLoginMutation({
+    onSuccess: () => navigate(returnTo, { replace: true }),
+    onError: () => turnstile.reset(),
+  });
 
   return (
     <AuthCard
@@ -32,14 +38,15 @@ export const PageLogin = () => {
         </Typography>
       }
     >
-      <form className="flex flex-col gap-4" onSubmit={handleSubmit((values) => login(values))}>
+      <form className="flex flex-col gap-4" onSubmit={handleSubmit((values) => login({ ...values, turnstileToken: turnstile.token }))}>
         <FieldWrapper label="E-mail" htmlFor="login-email" error={errors.email?.message}>
           <Input id="login-email" type="email" autoComplete="email" {...register("email")} aria-invalid={Boolean(errors.email)} />
         </FieldWrapper>
         <FieldWrapper label="Senha" htmlFor="login-password" error={errors.password?.message}>
-          <Input id="login-password" type="password" autoComplete="current-password" {...register("password")} aria-invalid={Boolean(errors.password)} />
+          <PasswordInput id="login-password" autoComplete="current-password" {...register("password")} aria-invalid={Boolean(errors.password)} />
         </FieldWrapper>
-        <Button type="submit" size="lg" loading={isPending}>
+        {turnstile.enabled && <TurnstileWidget {...turnstile.widgetProps} />}
+        <Button type="submit" size="lg" loading={isPending} disabled={!turnstile.ready}>
           Entrar
         </Button>
         <Typography variant="caption" as="p">

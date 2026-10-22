@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import axios from "axios";
 import { notify } from "@/components";
+import { turnstileHeaders, type TurnstileConfig } from "@/components/turnstile";
 import { getApiErrorMessage } from "@/app/utils/get-api-error-message";
 import { portalApi } from "@/lib/api/clients";
 import type { MutationOptions } from "@/lib/api/types";
@@ -20,13 +21,22 @@ const getMe = async (): Promise<PortalCustomerDto | null> => {
   }
 };
 
-const login = async (payload: LoginRequest): Promise<PortalCustomerDto> => {
-  const { data } = await portalApi.post<PortalCustomerDto>("/auth/login", payload);
+/** O token da verificação humana vai em header, nunca no corpo. */
+type WithTurnstile<T> = T & { turnstileToken?: string | null };
+
+const login = async ({ turnstileToken, ...payload }: WithTurnstile<LoginRequest>): Promise<PortalCustomerDto> => {
+  const { data } = await portalApi.post<PortalCustomerDto>("/auth/login", payload, { headers: turnstileHeaders(turnstileToken) });
   return data;
 };
 
-const register = async (payload: RegisterRequest): Promise<PortalCustomerDto> => {
-  const { data } = await portalApi.post<PortalCustomerDto>("/auth/register", payload);
+const register = async ({ turnstileToken, ...payload }: WithTurnstile<RegisterRequest>): Promise<PortalCustomerDto> => {
+  const { data } = await portalApi.post<PortalCustomerDto>("/auth/register", payload, { headers: turnstileHeaders(turnstileToken) });
+  return data;
+};
+
+/** Pergunta ao backend se a verificação humana está ligada e qual a chave pública do widget. */
+export const loadTurnstileConfig = async (): Promise<TurnstileConfig> => {
+  const { data } = await portalApi.get<TurnstileConfig>("/public/turnstile");
   return data;
 };
 
@@ -52,7 +62,7 @@ export const useSessionQuery = () =>
     retry: false,
   });
 
-export const useLoginMutation = (options?: MutationOptions<PortalCustomerDto, LoginRequest>) => {
+export const useLoginMutation = (options?: MutationOptions<PortalCustomerDto, WithTurnstile<LoginRequest>>) => {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: login,
@@ -70,7 +80,7 @@ export const useLoginMutation = (options?: MutationOptions<PortalCustomerDto, Lo
   });
 };
 
-export const useRegisterMutation = (options?: MutationOptions<PortalCustomerDto, RegisterRequest>) => {
+export const useRegisterMutation = (options?: MutationOptions<PortalCustomerDto, WithTurnstile<RegisterRequest>>) => {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: register,
